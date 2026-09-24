@@ -1,0 +1,102 @@
+{
+  "project_name": "Domus",
+  "app_type": "Smart Home Dashboard & Security Control Center",
+  "entry_point": "Direct entrance into Sol Invictus (no landing page)",
+  "aesthetic_theme": {
+    "style": "Transparent Bubbles with Dynamic Solar Backgrounds",
+    "glassmorphism": "backdrop-blur-xl bg-white/40 dark:bg-slate-900/50 border border-white/30 dark:border-white/10 shadow-[0_8px_32px_0_rgba(0,0,0,0.12)]",
+    "bubble_card_geometry": "rounded-3xl hover:scale-[1.02] transition-all duration-300 ease-out",
+    "solar_background_modes": {
+      "dawn": "from-amber-100 via-rose-100 to-sky-200 dark:from-slate-950 dark:via-purple-950/60 dark:to-amber-950/40",
+      "day": "from-sky-100 via-amber-50/60 to-blue-100 dark:from-slate-950 dark:via-slate-900 dark:to-blue-950/50",
+      "sunset": "from-orange-200 via-amber-100 to-purple-200 dark:from-slate-950 dark:via-orange-950/50 dark:to-purple-950/60",
+      "night": "from-slate-950 via-indigo-950/80 to-blue-950 dark:from-black dark:via-slate-950 dark:to-indigo-950"
+    }
+  },
+  "identities": {
+    "sol_invictus": {
+      "name": "Sol Invictus",
+      "purpose": "Home automation, lighting, plugs, scenes & climate control",
+      "primary_accent": "#f59e0b",
+      "gradient": "from-amber-500 to-orange-500",
+      "glow": "rgba(245, 158, 11, 0.25)",
+      "badge": "bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/20"
+    },
+    "terminus": {
+      "name": "Terminus",
+      "purpose": "Security surveillance, video intercom & intrusion defense",
+      "primary_accent": "#06b6d4",
+      "gradient": "from-cyan-500 to-blue-600",
+      "glow": "rgba(6, 182, 212, 0.25)",
+      "badge": "bg-cyan-500/10 text-cyan-600 dark:text-cyan-400 border-cyan-500/20"
+    }
+  },
+  "typography": {
+    "heading_font": "Satoshi, Outfit, sans-serif",
+    "body_font": "Inter, system-ui, sans-serif",
+    "mono_font": "JetBrains Mono, monospace",
+    "scales": {
+      "h1": "text-3xl sm:text-4xl lg:text-5xl font-extrabold tracking-tight",
+      "h2": "text-2xl sm:text-3xl font-bold tracking-tight",
+      "h3": "text-xl sm:text-2xl font-semibold",
+      "card_title": "text-lg font-medium tracking-wide",
+      "body": "text-sm sm:text-base leading-relaxed",
+      "label": "text-xs font-semibold uppercase tracking-wider"
+    }
+  },
+  "colors": {
+    "sol_amber": "#f59e0b",
+    "sol_gold": "#d97706",
+    "sol_warm_light": "#fffbeb",
+    "terminus_cyan": "#06b6d4",
+    "terminus_slate": "#1e293b",
+    "terminus_alarm_red": "#ef4444",
+    "glass_border_light": "rgba(255, 255, 255, 0.4)",
+    "glass_border_dark": "rgba(255, 255, 255, 0.12)"
+  },
+  "key_features_layout": {
+    "persistent_header": "Glassmorphic top bar with Sol Invictus / Terminus switcher pill, solar position widget (Dawn/Day/Sunset/Night status + lat/lon sun dial), active security alert status, quick settings launcher.",
+    "sol_invictus_view": {
+      "sections": [
+        "Room & Zone Filter Pills (All, Living Room, Kitchen, Bedroom, Garden, Garage, + Add Room)",
+        "Quick Scene Activators (Movie Time, Relax, Morning Sun, All Off)",
+        "Grid of Transparent Bubble Cards representing devices (Light Dimmers with color spectrum pickers, Smart Plugs with power consumption gauges, Thermostats, Automations)",
+        "Unassigned / Newly Discovered HA Devices Banner & Drag-Assign Drawer"
+      ]
+    },
+    "terminus_view": {
+      "sections": [
+        "Anti-Intrusion Control Unit (Arm Away, Arm Stay, Disarm, Sensor Zone Matrix: Motion, Magnetic Contact, Glass Break)",
+        "Live Security Camera Feed Grid (4-view or single-expanded with AI motion detection badges & PTZ controls)",
+        "Intercom Doorbell Widget with Live Call Simulator, Audio Toggle & Remote Door Unlock CTA",
+        "Security Event Timeline Log (Timestamped activity feed)"
+      ]
+    },
+    "room_management_modal": "Full CRUD for rooms/zones, room order re-ordering, entity moving tool.",
+    "settings_modal": "Home location settings (Address, Lat/Lon geocoding, Sun calculations), Dynamic solar colors toggle, Light/Dark override, HA Integration hub (Sonoff eWeLink, Tuya Smart Life, Tapo, Blink status)."
+  },
+  "image_urls": {
+    "ambient_living_room": "https://images.pexels.com/photos/19473771/pexels-photo-19473771.jpeg?auto=compress&cs=tinysrgb&dpr=2&h=650&w=940",
+    "modern_interior": "https://images.unsplash.com/photo-1751945965597-71171ec7a458?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NxA5NXx8MHwxfHNlYXJjaHwzfHxzbWFydCUyMGhvbWUlMjBtb2Rlcm4lMjBpbnRlcmlvciUyMGxpdmluZyUyMHJvb20lMjBhbWJpZW50JTIwbGlnaHRpbmd8ZW58MHx8fHwxNzkwMjkyNzM2fDA&ixlib=rb-4.1.0&q=85",
+    "security_camera_1": "https://images.pexels.com/photos/24346971/pexels-photo-24346971.jpeg?auto=compress&cs=tinysrgb&dpr=2&h=650&w=940",
+    "security_camera_2": "https://images.pexels.com/photos/39457148/pexels-photo-39457148.jpeg?auto=compress&cs=tinysrgb&dpr=2&h=650&w=940"
+  },
+  "instructions_to_main_agent": [
+    "Ensure the app uses JavaScript (.js files) as indicated by the workspace codebase structure.",
+    "Ensure no landing page exists: the default root route loads directly into Sol Invictus.",
+    "The header must feature an intuitive toggle between 'Sol Invictus' and 'Terminus' with distinct warm/cold active glowing pill styling.",
+    "Implement the Solar Position Engine hook or utility calculating the sun state (Dawn, Day, Sunset, Night) based on the user latitude/longitude and real system time.",
+    "Style device containers using transparent glass bubbles with backdrop blur (`backdrop-blur-xl bg-white/30 dark:bg-black/40 border border-white/20 rounded-3xl p-5 shadow-lg`).",
+    "Implement full Room CRUD functionality: create, edit name/icon, delete, and drag/move entities between rooms.",
+    "Include the newly detected HA unassigned devices bar with quick 'Assign to Room' dropdowns.",
+    "Include camera live stream mock feeds, intercom ring popup modal with door unlock button, and alarm zone status grid in Terminus.",
+    "Add 'data-testid' attributes to all interactive controls (buttons, toggles, sliders, inputs, navigation elements) to support automated testing.",
+    "Make sure hover states maintain contrast and all color switches are smooth (transition-colors duration-300)."
+  ],
+  "UNIVERSAL GUIDELINES FOR MAIN AGENT": [
+    "Never use dark gradients; use flat or solid deep backgrounds combined with translucent glass overlays.",
+    "Avoid generic centered layouts; use generous asymmetrical grids and floating glass bubbles.",
+    "Ensure every interactive element has explicit hover/active states and clear text contrast.",
+    "Always include required test ids on buttons, switches, and form inputs (e.g. data-testid='switcher-sol-invictus', data-testid='alarm-arm-away')."
+  ]
+}
