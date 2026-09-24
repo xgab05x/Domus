@@ -1,11 +1,13 @@
 import { useEffect, useState } from "react";
 import { X, MapPin, Sun, Moon, Sparkles, RefreshCw } from "lucide-react";
 import { useDomus } from "@/context/DomusContext";
+import { useEscape } from "@/hooks/useEscape";
 import { toast } from "sonner";
 
 export default function SettingsDialog({ open, onOpenChange }) {
   const { settings, updateSettings } = useDomus();
   const [local, setLocal] = useState(settings);
+  useEscape(open, () => onOpenChange(false));
 
   useEffect(() => { setLocal(settings); }, [settings, open]);
 
@@ -55,7 +57,7 @@ export default function SettingsDialog({ open, onOpenChange }) {
               value={local.home_name || ""}
               onChange={(e) => setLocal({ ...local, home_name: e.target.value })}
               onBlur={() => save({ home_name: local.home_name })}
-              className="w-full px-4 py-2.5 rounded-2xl bg-white/70 dark:bg-slate-800/60 border border-white/40 dark:border-white/10 outline-none focus:ring-2 focus:ring-amber-400"
+              className="w-full px-4 py-2.5 rounded-2xl bg-white/70 dark:bg-slate-800/60 border border-white/40 dark:border-white/10 outline-none focus:ring-2 focus:ring-amber-400 text-slate-900 dark:text-slate-50"
             />
           </Section>
 
@@ -69,7 +71,7 @@ export default function SettingsDialog({ open, onOpenChange }) {
                   onChange={(e) => setLocal({ ...local, address: e.target.value })}
                   onBlur={() => save({ address: local.address })}
                   placeholder="Via, città, paese"
-                  className="flex-1 px-4 py-2.5 rounded-2xl bg-white/70 dark:bg-slate-800/60 border border-white/40 dark:border-white/10 outline-none focus:ring-2 focus:ring-amber-400"
+                  className="flex-1 px-4 py-2.5 rounded-2xl bg-white/70 dark:bg-slate-800/60 border border-white/40 dark:border-white/10 outline-none focus:ring-2 focus:ring-amber-400 text-slate-900 dark:text-slate-50"
                 />
                 <button
                   data-testid="geocode-btn"
@@ -88,7 +90,7 @@ export default function SettingsDialog({ open, onOpenChange }) {
                     value={local.latitude ?? 0}
                     onChange={(e) => setLocal({ ...local, latitude: parseFloat(e.target.value) })}
                     onBlur={() => save({ latitude: local.latitude })}
-                    className="w-full px-3 py-2 rounded-xl bg-white/70 dark:bg-slate-800/60 border border-white/40 dark:border-white/10 outline-none focus:ring-2 focus:ring-amber-400 font-mono text-sm"
+                    className="w-full px-3 py-2 rounded-xl bg-white/70 dark:bg-slate-800/60 border border-white/40 dark:border-white/10 outline-none focus:ring-2 focus:ring-amber-400 font-mono text-sm text-slate-900 dark:text-slate-50"
                   />
                 </label>
                 <label className="block">
@@ -99,7 +101,7 @@ export default function SettingsDialog({ open, onOpenChange }) {
                     value={local.longitude ?? 0}
                     onChange={(e) => setLocal({ ...local, longitude: parseFloat(e.target.value) })}
                     onBlur={() => save({ longitude: local.longitude })}
-                    className="w-full px-3 py-2 rounded-xl bg-white/70 dark:bg-slate-800/60 border border-white/40 dark:border-white/10 outline-none focus:ring-2 focus:ring-amber-400 font-mono text-sm"
+                    className="w-full px-3 py-2 rounded-xl bg-white/70 dark:bg-slate-800/60 border border-white/40 dark:border-white/10 outline-none focus:ring-2 focus:ring-amber-400 font-mono text-sm text-slate-900 dark:text-slate-50"
                   />
                 </label>
               </div>

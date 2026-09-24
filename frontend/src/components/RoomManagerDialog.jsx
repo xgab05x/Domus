@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useDomus } from "@/context/DomusContext";
+import { useEscape } from "@/hooks/useEscape";
 import { X, Plus, Trash2, Save, Edit3 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -12,6 +13,7 @@ export default function RoomManagerDialog({ open, onOpenChange }) {
   const [editingId, setEditingId] = useState(null);
   const [editName, setEditName] = useState("");
   const [editColor, setEditColor] = useState("#f59e0b");
+  useEscape(open, () => onOpenChange(false));
 
   if (!open) return null;
 
@@ -57,7 +59,7 @@ export default function RoomManagerDialog({ open, onOpenChange }) {
                 value={newName}
                 onChange={(e) => setNewName(e.target.value)}
                 placeholder="Es. Studio, Balcone…"
-                className="flex-1 min-w-[200px] px-4 py-2.5 rounded-2xl bg-white/70 dark:bg-slate-800/60 border border-white/40 dark:border-white/10 outline-none focus:ring-2 focus:ring-amber-400"
+                className="flex-1 min-w-[200px] px-4 py-2.5 rounded-2xl bg-white/70 dark:bg-slate-800/60 border border-white/40 dark:border-white/10 outline-none focus:ring-2 focus:ring-amber-400 text-slate-900 dark:text-slate-50"
               />
               <ColorPicker value={newColor} onChange={setNewColor} testid="new-room-color" />
               <button
@@ -86,7 +88,7 @@ export default function RoomManagerDialog({ open, onOpenChange }) {
                           data-testid={`edit-room-name-${r.id}`}
                           value={editName}
                           onChange={(e) => setEditName(e.target.value)}
-                          className="flex-1 px-3 py-1.5 rounded-xl bg-white/70 dark:bg-slate-800/60 border border-white/40 dark:border-white/10 outline-none focus:ring-2 focus:ring-amber-400"
+                          className="flex-1 px-3 py-1.5 rounded-xl bg-white/70 dark:bg-slate-800/60 border border-white/40 dark:border-white/10 outline-none focus:ring-2 focus:ring-amber-400 text-slate-900 dark:text-slate-50"
                         />
                         <ColorPicker value={editColor} onChange={setEditColor} testid={`edit-color-${r.id}`} />
                         <button data-testid={`save-room-${r.id}`} onClick={saveEdit} className="px-3 py-1.5 rounded-xl bg-emerald-500 text-white flex items-center gap-1 text-sm">
@@ -99,8 +101,8 @@ export default function RoomManagerDialog({ open, onOpenChange }) {
                     ) : (
                       <>
                         <div className="flex-1 min-w-0">
-                          <div className="font-semibold truncate">{r.name}</div>
-                          <div className="text-xs text-slate-500">{count} dispositivi</div>
+                          <div className="font-semibold truncate text-slate-900 dark:text-slate-50">{r.name}</div>
+                          <div className="text-xs text-slate-600 dark:text-slate-400">{count} dispositivi</div>
                         </div>
                         <button data-testid={`edit-room-${r.id}`} onClick={() => startEdit(r)} className="w-8 h-8 rounded-full hover:bg-white/60 dark:hover:bg-slate-700/60 flex items-center justify-center text-slate-500">
                           <Edit3 size={15} />

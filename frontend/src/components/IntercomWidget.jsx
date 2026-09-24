@@ -22,7 +22,7 @@ export default function IntercomWidget() {
       <div className="relative flex items-center justify-between mb-3">
         <div>
           <div className="text-xs uppercase tracking-widest text-cyan-600 dark:text-cyan-400 font-semibold">Citofono</div>
-          <h3 className="font-display text-xl font-bold">{intercom.name}</h3>
+          <h3 className="font-display text-xl font-bold text-slate-900 dark:text-slate-50">{intercom.name}</h3>
         </div>
         <div className={`w-14 h-14 rounded-2xl flex items-center justify-center ${
           s.ringing ? "bg-gradient-to-br from-amber-400 to-orange-500 text-white shadow-lg" : "bg-gradient-to-br from-cyan-500 to-blue-600 text-white"

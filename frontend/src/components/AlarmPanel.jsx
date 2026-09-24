@@ -74,8 +74,8 @@ export default function AlarmPanel() {
                 <Icon size={16} />
               </div>
               <div className="flex-1 min-w-0">
-                <div className="font-semibold text-sm truncate">{z.name}</div>
-                <div className="text-[10px] uppercase tracking-widest text-slate-500">{kind}</div>
+                <div className="font-semibold text-sm truncate text-slate-900 dark:text-slate-50">{z.name}</div>
+                <div className="text-[10px] uppercase tracking-widest text-slate-600 dark:text-slate-400">{kind}</div>
               </div>
               <button
                 data-testid={`zone-bypass-${z.id}`}

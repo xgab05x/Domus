@@ -1,0 +1,30 @@
+{
+  "summary": "Full-stack testing of Domus (Sol Invictus + Terminus). 13/13 backend pytest cases pass covering Rooms CRUD + orphaning, Entities filter/state-merge/move/delete, Discovered list/mock/assign, Settings singleton persistence, Intercom ring/answer and Alarm mode validation. Frontend flows verified: '/' -> '/sol-invictus' redirect, header switcher, filter pills, scene activation, brightness sliders/color pickers present, Room Manager create/edit/delete with entity orphaning, unassigned drawer, device bubble menu with move options, Terminus camera grid, intercom ring->unlock->hangup, alarm 3-mode toggles, Settings persistence (home_name/dynamic_colors/theme override).",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Multiple dark-mode surfaces (Settings dialog inputs, Room Manager list items, Alarm panel zone labels, Intercom widget name, Unassigned drawer device names)", "issues": ["Very low text contrast in dark theme: input values (e.g. Nome Casa 'Casa Domus'), room names in RoomManagerDialog list, zone titles ('Porta Ingresso', 'Finestra Salotto', 'PIR Corridoio', 'Rottura Vetri Cucina'), citofono entity name and discovered device names appear near-invisible on the dark glass background. Increase base text color contrast (use text-slate-100 / dark:text-slate-50) on these labels and input fields."]}
+    ]
+  },
+  "test_report_links": ["/app/backend/tests/test_domus_api.py", "/app/test_reports/pytest/pytest_results.xml"],
+  "action_items": [
+    "Fix low-contrast text in dark mode across: SettingsDialog input values, RoomManagerDialog room name row, AlarmPanel zone titles, IntercomWidget entity name, UnassignedDrawer device names.",
+    "Consider closing RoomManagerDialog / UnassignedDrawer / SettingsDialog on Escape key (currently only backdrop click or explicit close button works)."
+  ],
+  "critical_code_review_comments": [
+    "server.py: alarm event level is 'warning' when arming home/away – acceptable, but consider 'info' since arming is not an intrusion. Minor.",
+    "server.py: no PATCH validation for theme_mode ('auto|light|dark') or alarm_armed in SettingsUpdate; a bogus value could be persisted via /api/settings.",
+    "IntercomWidget optimistically updates local entity to ringing:true before backend confirms; fine but reload may briefly overwrite. Not observed as an issue.",
+    "DeviceBubble brightness slider is a native input range and correctly PATCHes state merge – confirmed backend merges non-updated keys."
+  ],
+  "updated_files": ["/app/backend/tests/test_domus_api.py"],
+  "success_rate": {"backend": "100% (13/13)", "frontend": "100% of listed flows verified with a design-contrast caveat"},
+  "test_credentials": "None required (no auth in app).",
+  "seed_data_creation": "Backend seeds 6 rooms, ~27 entities, 3 discovered devices, singleton settings, 3 events on empty DB. Test created/cleaned TEST_ rooms and entities.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Backend fully covered by /app/backend/tests/test_domus_api.py (pytest-xdist safe). All UI data-testids per task spec are present and reachable. Only remaining concern is dark-mode text contrast on several labels/inputs listed under design_issues.",
+  "rca of the issue": "N/A – no functional bugs. The transient 'intercom-unlock not found' during batched testing was because ringing state persisted between runs (from an earlier simulateRing without unlock); re-running with a clean state confirmed the flow works correctly."
+}

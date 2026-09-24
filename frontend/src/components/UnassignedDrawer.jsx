@@ -1,11 +1,13 @@
 import { X, RadioTower, Lightbulb, Plug, Cctv } from "lucide-react";
 import { useDomus } from "@/context/DomusContext";
+import { useEscape } from "@/hooks/useEscape";
 import { toast } from "sonner";
 
 const icons = { light: Lightbulb, plug: Plug, camera: Cctv };
 
 export default function UnassignedDrawer({ open, onOpenChange }) {
   const { discovered, rooms, assignDiscovered, mockDiscovery } = useDomus();
+  useEscape(open, () => onOpenChange(false));
   if (!open) return null;
 
   return (
@@ -33,8 +35,8 @@ export default function UnassignedDrawer({ open, onOpenChange }) {
                   <Icon size={20} />
                 </div>
                 <div className="flex-1 min-w-0">
-                  <div className="font-semibold truncate">{d.name}</div>
-                  <div className="text-[10px] uppercase tracking-widest text-slate-500">{d.integration} · {d.type}</div>
+                  <div className="font-semibold truncate text-slate-900 dark:text-slate-50">{d.name}</div>
+                  <div className="text-[10px] uppercase tracking-widest text-slate-600 dark:text-slate-400">{d.integration} · {d.type}</div>
                 </div>
                 <select
                   data-testid={`assign-select-${d.id}`}

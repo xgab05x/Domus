@@ -17,6 +17,12 @@ body {
     overflow-x: hidden;
 }
 
+.dark body { color: #f8fafc; }
+
+input, select, textarea { color: inherit; }
+input::placeholder, textarea::placeholder { color: #94a3b8; }
+.dark input::placeholder, .dark textarea::placeholder { color: #64748b; }
+
 h1, h2, h3, h4, .font-display {
     font-family: 'Outfit', system-ui, sans-serif;
     letter-spacing: -0.02em;
