@@ -20,6 +20,14 @@ Interfaccia grafica web per gestire la domotica Home Assistant. Mini PC Linux Ub
 - Frontend: React 19 + Tailwind + shadcn/ui + Sonner + Recharts. State via DomusContext (polling 30s + WebSocket live), API in src/lib/api.js.
 
 ## Implemented
+### Giugno 2026 (iter. 5) – Hardening post audit di sicurezza (101/101 test backend, flussi UI verificati)
+- **SEC-001** `PATCH /api/settings` richiede il PIN per i campi sensibili (`pin_enabled`, `pin_protect_disarm`, `pin_protect_sensitive`, `alarm_ha_code`, `alarm_use_pin_as_code`, `alarm_entity_id`, `alarm_modes`, `alarm_zone_ids`, `alarm_armed`) → non è più possibile disattivare la protezione senza conoscere il PIN. Nuovo scope `config` in `require_pin()` e `updateSettingsSecure()` nel frontend (tab Sicurezza, Allarme, Backup).
+- **SEC-002/004** Backup: `restore` e `import?restore=true` richiedono il PIN; `SETTINGS_EXCLUDE` esclude da snapshot e ripristino `pin_hash`, `pin_*`, `alarm_ha_code`, `alarm_armed`, `alarm_ha_state` (niente più segreti nei file scaricabili).
+- **SEC-003** Il PIN sulle azioni sensibili (`privacy`, `siren`, `locked`) vale per **qualsiasi** tipo di entità e anche per l'attivazione delle **scene** che contengono quelle azioni.
+- **SEC-005** `/api/ha/proxy` limitato a un allowlist di prefissi HA (camera/image/media_player/tts proxy), `/api/ha/hls/{path}` validato con regex, URL di cast accettato solo `http(s)` e senza credenziali nell'host. CORS: `allow_credentials` disattivato quando le origin sono `*`; PIN di default non più scritto nei log.
+- Safety UX: la modalità `disarmed` è sempre forzata in `alarm_modes`.
+- Code quality: key React stabili al posto degli indici, catch non più silenziosi (log), token del finto HA da variabile d'ambiente `FAKE_HA_TOKEN`.
+
 ### Giugno 2026 (iter. 4) – 22/22 test backend + flussi UI verificati
 - **PIN di sicurezza** (`pin.py`, PBKDF2-SHA256 200k iterazioni, hash in `settings`, lockout 60s dopo 5 tentativi): PIN richiesto per **disarmare** l'allarme e per le **azioni sensibili** (apri porta citofono, privacy telecamera, sirena). Tastierino `PinDialog`, `askPin()` nel context, tab Impostazioni → **Sicurezza** (`PinSettings.jsx`) con toggle e cambio PIN. PIN iniziale `1234`. Endpoint `/api/pin/status|verify|change`, enforcement server-side su `/api/alarm/set/{mode}`, `/api/intercom/{id}/answer?action=unlock` e `PATCH /api/entities/{id}` (privacy/siren/locked).
 - **Pannello allarme HA reale**: tab Impostazioni → **Allarme** (`AlarmSettings.jsx`) con selezione dell'entità `alarm_control_panel.*`, modalità supportate (`supported_features` → disarmed/home/away/night/vacation/custom), zone Domus appartenenti al pannello, codice HA (PIN Domus come codice o codice dedicato). Autorilevamento del pannello all'import HA, `GET /api/alarm/panels|state`, armamento/disarmo reali via `alarm_control_panel.*` e sync bidirezionale (stato HA → `settings.alarm_armed`, push websocket `type: "settings"`). `AlarmPanel.jsx` mostra le modalità configurate, lo stato del pannello (arming/pending/triggered) e i badge pannello HA / PIN.
@@ -44,6 +52,7 @@ Interfaccia grafica web per gestire la domotica Home Assistant. Mini PC Linux Ub
 
 ## Backlog / Future
 - P1: WebRTC/go2rtc a latenza minima come alternativa all'HLS nel dettaglio camera.
+- P2: split di `server.py` per dominio (settings/backup/ha/alarm/cameras/cast) — file ~2600 righe.
 - P2: editor automazioni visuale; ordinamento drag&drop viste/stanze; storico eventi persistente per sensore.
 - P2: notifiche push (mobile) su campanello/allarme.
 - P2: log accessi PIN (chi ha disarmato e quando) e PIN multipli per utente/ospite.

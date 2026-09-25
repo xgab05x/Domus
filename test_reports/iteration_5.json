@@ -1,0 +1,75 @@
+{
+  "iteration": 5,
+  "date": "2026-09-25",
+  "scope": "Verifica correzioni audit sicurezza SEC-001..005 + regressione completa v3/v4",
+  "summary": "Verificate tutte le correzioni post-audit: PIN enforcement su PATCH /api/settings (campi pin_* e alarm_*), su restore/import backup, su scene con azioni sensibili e su PATCH entities con state.privacy/siren/locked (per QUALSIASI tipo di entità), sanificazione backup (no pin_hash/alarm_ha_code/ha_token/pin_enabled/alarm_armed), allowlist HA proxy, regex path HLS, validazione URL cast (blocca file:// e credenziali in host). 45/45 test v5 nuovi PASS, 22/22 v4 PASS, 34/34 v3 PASS. Frontend: PinDialog appare correttamente per disarma, toggle sicurezza, ripristino backup; PIN 1234 sblocca, PIN 9999 mostra pin-error. Nessuna regressione.",
+  "backend": {
+    "new_suite": "/app/backend/tests/test_domus_v5.py",
+    "command": "python -m pytest tests/test_domus_v5.py tests/test_domus_v4.py tests/test_domus_v3.py -q -p no:randomly -n 0",
+    "result": "101/101 PASS (v5=45, v4=22, v3=34)",
+    "junit_xml": "/app/test_reports/pytest/all_results.xml",
+    "covered": [
+      "SEC-001 SettingsPin (18 test): 9 campi protetti (pin_enabled, pin_protect_disarm, pin_protect_sensitive, alarm_ha_code, alarm_use_pin_as_code, alarm_entity_id, alarm_modes, alarm_zone_ids, alarm_armed) → 401 senza PIN, 200 con pin=1234; 8 campi non protetti (home_name, theme_mode, color_presets, backup_auto, tts_entity, ha_import_rooms, energy_cost, climate_presets) → 200 senza PIN",
+      "SEC-001b PinToggleAffectsDisarm: disabilitare pin_enabled con PIN → disarm senza PIN OK; riattivare pin_enabled con PIN → disarm senza PIN 401. Stato ripristinato a pin_enabled=true a fine test",
+      "SEC-002 BackupRestorePin: restore senza pin 401 / con pin 200; import senza restore non richiede pin; import?restore=true senza pin 401 / con pin=1234 200; dopo restore il PIN 1234 continua a funzionare (backup NON reimposta pin_hash/pin_enabled)",
+      "SEC-004 BackupNoSecrets: download backup e verifica JSON: settings NON contiene pin_hash, alarm_ha_code, ha_token, pin_enabled, alarm_armed",
+      "SEC-003 SensitiveActions: scena con {privacy:true} → 401 senza pin, 200 con pin; scena solo luci on/brightness → 200 senza pin; PATCH entities light con state.locked → 401 senza pin, 200 con pin (dimostra che l'enforcement è per QUALSIASI tipo, non solo camera); PATCH camera state.siren → 401/200",
+      "SEC-005 HAProxyAndCast: /api/ha/proxy?path=/api/config → 404 (fuori allowlist); path=/api/camera_proxy/... → non 404; path con .. o %2e%2e → 404; /api/ha/hls con caratteri non ammessi (%2e%2e, spazi, $) → 404; cast con file:///etc/passwd → 400; cast http://user:pass@host → 400; cast https://... valido → 200",
+      "Regressione v4 (22/22): PIN status, lockout dopo 5 errori, alarm disarm/arm reale su HA con code, HLS proxy, cast camera/dashboard/stop, sync HA→Domus, privacy PIN, PIN change",
+      "Regressione v3 (34/34): stanze, entità (aggiornato: privacy usa pin=1234), gruppi, scene, clima, consumi, viste, media, camere, intercom (aggiornato: unlock usa pin=1234), backup roundtrip (aggiornato: restore usa pin=1234)"
+    ],
+    "notes": "Eseguire SERIALMENTE (-p no:randomly -n 0): i test condividono PIN, allarme, backup e collezione settings."
+  },
+  "frontend": {
+    "method": "Playwright su URL pubblico https://smart-home-unified-1.preview.emergentagent.com",
+    "verified": [
+      "(a) Terminus AlarmPanel: click alarm-disarmed apre pin-dialog; PIN 9999 → pin-error visibile e 401 nei log; PIN 1234 → dialog chiude, alarm-status = 'Disarmato'",
+      "(b) Impostazioni → tab Sicurezza (settings-tab-security): click su pin-toggle-disarm apre pin-dialog; pin-cancel lascia aria-pressed invariato (nessuna modifica)",
+      "(c) Impostazioni → tab Backup (settings-tab-backup): click su backup-restore-* apre pin-dialog (dopo conferma del window.confirm)",
+      "Tab presenti: general, security, alarm, ha, backup, problems",
+      "Nessun errore console (solo warning WS transitorio e 401 attesi durante i test)"
+    ],
+    "known_ux_notes": [
+      "settings.alarm_modes deve includere 'disarmed' perché il pulsante disarm sia visibile sulla plancia; se una configurazione manuale lo omette, non c'è modo di disarmare da UI. Suggerimento: forzare 'disarmed' come modalità sempre presente lato server o mostrare un avviso."
+    ]
+  },
+  "critical_code_review_comments": [
+    "server.py è ~2600 righe: consigliato splittarlo per dominio (settings/backup/ha/scenes/alarm/cameras/cast) per manutenibilità.",
+    "server.py:1738 update_settings — se solo 'pin' è nel body dopo la pop, upd risulta vuoto e ritorna 400 'Nothing to update'. OK, ma il messaggio in italiano sarebbe meglio.",
+    "backup.py:16 SETTINGS_EXCLUDE ora include correttamente pin_*, alarm_ha_code, alarm_armed, alarm_ha_state. ha_token già escluso. Coerente.",
+    "server.py:2109 ha_proxy: allowlist per prefissi + check .. e %2e%2e — OK. Il decoding lato ASGI decodifica %2e%2e→'..' quindi il primo check è sufficiente; lasciare entrambi come difesa in profondità è ragionevole.",
+    "server.py:2261 ha_hls: regex whitelist [A-Za-z0-9_\\-./]+ — corretto ma il client (requests/browser) normalizza './..' quindi la difesa server-side è ridondante ma OK per robustezza.",
+    "server.py:2295 cast_to_screen: valida scheme http/https e vieta credenziali in netloc. Manca solo il blocco di IP privati/loopback (RFC1918/127.0.0.0/8) → possibile SSRF verso rete locale; da valutare se rilevante nel contesto casalingo.",
+    "pin.py: PBKDF2 200k iterazioni + lockout 60s dopo 5 errori — OK per un dispositivo domestico.",
+    "activate_scene (server.py:1574): richiede PIN se una qualsiasi azione contiene sensitive_keys — corretto.",
+    "update_entity (server.py:1441): il PIN viene richiesto quando state contiene sensitive keys su QUALSIASI tipo — corretto (comportamento coerente con richiesta SEC-003)."
+  ],
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [
+    "/app/backend/tests/test_domus_v5.py",
+    "/app/backend/tests/test_domus_v4.py",
+    "/app/backend/tests/test_domus_v3.py",
+    "/app/test_reports/pytest/all_results.xml"
+  ],
+  "action_items": [],
+  "updated_files": [
+    "/app/backend/tests/test_domus_v5.py (nuovo, 45 test per SEC-001..005)",
+    "/app/backend/tests/test_domus_v4.py (fixture ha/config: ha_url/ha_token/ha_enabled)",
+    "/app/backend/tests/test_domus_v3.py (privacy/intercom-unlock/backup-restore ora inviano pin=1234)"
+  ],
+  "success_rate": {"backend": "100% (101/101)", "frontend": "100% flussi critici PIN/sicurezza"},
+  "test_credentials": "PIN=1234 (default). Fake HA: http://127.0.0.1:8123 token demo-token.",
+  "seed_data_creation": "Nessun seed nuovo. Ripristinato manualmente il nome della vista 'Interno Notte' che era 'TEST_Renamed' per pollution di un precedente run parziale di v3.",
+  "final_state": {
+    "pin": "1234",
+    "pin_enabled": true,
+    "alarm_armed": "disarmed",
+    "alarm_modes": ["disarmed", "home", "away", "night"],
+    "alarm_ha_code": "",
+    "alarm_use_pin_as_code": true
+  },
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "test_domus_v5.py copre tutte le correzioni di sicurezza SEC-001..005. Se un test v5 SEC-001 lascia impostazioni modificate e poi v4 fallisce, ricontrollare il teardown del modulo (già ripristina alarm_ha_code='', alarm_use_pin_as_code=True, alarm_modes standard). Eseguire sempre serialmente. Il file test_domus_v3.py è stato aggiornato per inviare pin=1234 in privacy/intercom-unlock/restore: se in futuro il PIN cambia, aggiornare la costante."
+}

@@ -45,7 +45,7 @@ def ensure_ha_connected():
     r = requests.get(f"{HA}/api/config", headers={"Authorization": "Bearer demo-token"}, timeout=5)
     assert r.status_code == 200, "Fake HA is not running on :8123"
     # Ensure Domus has HA configured (idempotent)
-    requests.post(f"{API}/ha/config", json={"url": HA, "token": "demo-token", "enabled": True}, timeout=10)
+    requests.post(f"{API}/ha/config", json={"ha_url": HA, "ha_token": "demo-token", "ha_enabled": True}, timeout=10)
     r = requests.post(f"{API}/ha/check", timeout=10)
     assert r.status_code == 200
     # Should already be imported from previous iterations; import once to be safe

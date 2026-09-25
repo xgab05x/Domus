@@ -1732,6 +1732,9 @@ async def update_settings(payload: SettingsUpdate):
         upd.pop("ha_token")
     if any(k in upd for k in PROTECTED_SETTINGS):
         await require_pin(await get_settings_doc(), provided_pin, "config")
+    if "alarm_modes" in upd:
+        # `disarmed` must always be selectable, otherwise the alarm could never be turned off from the UI.
+        upd["alarm_modes"] = ["disarmed"] + [m for m in upd["alarm_modes"] if m != "disarmed"]
     await db.settings.update_one({"id": "singleton"}, {"$set": upd}, upsert=True)
     if "climate_presets" in upd:
         await evaluate_all()

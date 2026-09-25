@@ -116,7 +116,7 @@ class TestCameras:
 
     def test_camera_toggle_state(self, api, app_data):
         cam = next(e for e in app_data["entities"] if e["type"] == "camera")
-        r = api.patch(f"{BASE_URL}/api/entities/{cam['id']}", json={"state": {"privacy": True, "night_vision": "on"}})
+        r = api.patch(f"{BASE_URL}/api/entities/{cam['id']}", json={"state": {"privacy": True, "night_vision": "on"}, "pin": "1234"})
         assert r.status_code == 200, r.text
         # verify
         r2 = api.get(f"{BASE_URL}/api/entities")
@@ -124,7 +124,7 @@ class TestCameras:
         assert e["state"].get("privacy") is True
         assert e["state"].get("night_vision") == "on"
         # reset
-        api.patch(f"{BASE_URL}/api/entities/{cam['id']}", json={"state": {"privacy": False, "night_vision": "auto"}})
+        api.patch(f"{BASE_URL}/api/entities/{cam['id']}", json={"state": {"privacy": False, "night_vision": "auto"}, "pin": "1234"})
 
     def test_doorbell_exists(self, app_data):
         names = [e["name"] for e in app_data["entities"] if e["type"] == "doorbell"]
@@ -137,7 +137,7 @@ class TestIntercom:
         e = next(x for x in app_data["entities"] if x["type"] == "intercom")
         r = api.post(f"{BASE_URL}/api/intercom/{e['id']}/ring")
         assert r.status_code == 200
-        r = api.post(f"{BASE_URL}/api/intercom/{e['id']}/answer?action=unlock")
+        r = api.post(f"{BASE_URL}/api/intercom/{e['id']}/answer?action=unlock", json={"pin": "1234"})
         assert r.status_code == 200
         r = api.post(f"{BASE_URL}/api/intercom/{e['id']}/answer?action=hangup")
         assert r.status_code == 200
@@ -351,7 +351,7 @@ class TestBackups:
         assert api.get(f"{BASE_URL}/api/views").json()
         assert any(v["id"] == vid and v["name"] == "TEST_Renamed" for v in api.get(f"{BASE_URL}/api/views").json())
 
-        r = api.post(f"{BASE_URL}/api/backups/{b['name']}/restore")
+        r = api.post(f"{BASE_URL}/api/backups/{b['name']}/restore", json={"pin": "1234"})
         assert r.status_code == 200, r.text
 
         views_after = api.get(f"{BASE_URL}/api/views").json()
