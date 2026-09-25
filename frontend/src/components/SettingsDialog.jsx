@@ -1,188 +1,139 @@
 import { useEffect, useState } from "react";
-import { X, MapPin, Sun, Moon, Sparkles, RefreshCw } from "lucide-react";
-import { useDomus } from "@/context/DomusContext";
-import { useEscape } from "@/hooks/useEscape";
+import { MapPin, Sun, Moon, Sparkles, Settings as SettingsIcon, Cloud, CloudRain, CloudSnow, CloudFog, CloudLightning, Wand2, X, Plus, Image as ImageIcon } from "lucide-react";
 import { toast } from "sonner";
+import Modal from "@/components/Modal";
+import ColorWheel from "@/components/ColorWheel";
+import { useDomus } from "@/context/DomusContext";
+import { rgbToHex } from "@/lib/color";
+
+const WEATHER = [
+  { k: "auto", l: "Automatico", I: Wand2 }, { k: "clear", l: "Sereno", I: Sun }, { k: "clouds", l: "Nuvoloso", I: Cloud },
+  { k: "fog", l: "Nebbia", I: CloudFog }, { k: "rain", l: "Pioggia", I: CloudRain }, { k: "snow", l: "Neve", I: CloudSnow }, { k: "storm", l: "Temporale", I: CloudLightning },
+];
 
 export default function SettingsDialog({ open, onOpenChange }) {
-  const { settings, updateSettings } = useDomus();
+  const { settings, weather, updateSettings, refresh } = useDomus();
   const [local, setLocal] = useState(settings);
-  useEscape(open, () => onOpenChange(false));
+  const [newPreset, setNewPreset] = useState({ name: "", rgb: [255, 200, 120] });
+  const [showWheel, setShowWheel] = useState(false);
 
   useEffect(() => { setLocal(settings); }, [settings, open]);
-
   if (!open || !local) return null;
 
-  const save = async (patch) => {
+  const save = async (patch, silent = false) => {
     setLocal((prev) => ({ ...prev, ...patch }));
     await updateSettings(patch);
-    toast.success("Impostazioni salvate");
+    if (!silent) toast.success("Impostazioni salvate");
   };
 
   const geocode = async () => {
     if (!local.address?.trim()) return;
     try {
-      const q = encodeURIComponent(local.address);
-      const url = `https://nominatim.openstreetmap.org/search?format=json&limit=1&q=${q}`;
-      const res = await fetch(url, { headers: { "Accept-Language": "it" } });
+      const res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&limit=1&q=${encodeURIComponent(local.address)}`, { headers: { "Accept-Language": "it" } });
       const arr = await res.json();
-      if (arr && arr.length > 0) {
-        const lat = parseFloat(arr[0].lat);
-        const lon = parseFloat(arr[0].lon);
-        await save({ latitude: lat, longitude: lon });
+      if (arr?.length) {
+        const lat = parseFloat(arr[0].lat), lon = parseFloat(arr[0].lon);
+        await save({ latitude: lat, longitude: lon, address: local.address }, true);
+        await refresh();
         toast.success(`Coordinate aggiornate: ${lat.toFixed(3)}, ${lon.toFixed(3)}`);
-      } else {
-        toast.error("Indirizzo non trovato");
-      }
-    } catch (e) {
-      toast.error("Errore geocoding");
-    }
+      } else toast.error("Indirizzo non trovato");
+    } catch { toast.error("Errore geocoding"); }
+  };
+
+  const presets = local.color_presets || [];
+  const addPreset = async () => {
+    if (!newPreset.name.trim()) return toast.error("Dai un nome al preset");
+    await save({ color_presets: [...presets, { name: newPreset.name.trim(), rgb: newPreset.rgb }] });
+    setNewPreset({ name: "", rgb: newPreset.rgb }); setShowWheel(false);
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4" data-testid="settings-dialog">
-      <div className="absolute inset-0 bg-slate-950/60 backdrop-blur-sm" onClick={() => onOpenChange(false)} />
-      <div className="relative glass-strong rounded-3xl w-full max-w-2xl max-h-[85vh] overflow-hidden flex flex-col">
-        <div className="flex items-center justify-between px-6 py-4 border-b border-white/40 dark:border-white/10">
-          <h3 className="font-display text-xl font-bold">Impostazioni Domus</h3>
-          <button data-testid="close-settings" onClick={() => onOpenChange(false)} className="w-9 h-9 rounded-full hover:bg-white/60 dark:hover:bg-slate-700/60 flex items-center justify-center">
-            <X size={18} />
-          </button>
-        </div>
-        <div className="p-6 overflow-y-auto space-y-6">
-          {/* Home name */}
-          <Section title="Nome casa">
-            <input
-              data-testid="home-name-input"
-              value={local.home_name || ""}
-              onChange={(e) => setLocal({ ...local, home_name: e.target.value })}
-              onBlur={() => save({ home_name: local.home_name })}
-              className="w-full px-4 py-2.5 rounded-2xl bg-white/70 dark:bg-slate-800/60 border border-white/40 dark:border-white/10 outline-none focus:ring-2 focus:ring-amber-400 text-slate-900 dark:text-slate-50"
-            />
-          </Section>
+    <Modal open={open} onClose={() => onOpenChange(false)} title="Impostazioni Domus" subtitle="Casa, posizione, atmosfera e preset" icon={<SettingsIcon size={18} />} testid="settings-dialog" width="max-w-2xl">
+      <div className="space-y-7">
+        <Section title="Nome casa">
+          <input data-testid="home-name-input" className="field" value={local.home_name || ""} onChange={(e) => setLocal({ ...local, home_name: e.target.value })} onBlur={() => save({ home_name: local.home_name })} />
+        </Section>
 
-          {/* Location */}
-          <Section title="Posizione geografica" hint="Usata per calcolare alba/tramonto e cambiare l'atmosfera dell'app.">
-            <div className="space-y-2">
-              <div className="flex gap-2">
-                <input
-                  data-testid="address-input"
-                  value={local.address || ""}
-                  onChange={(e) => setLocal({ ...local, address: e.target.value })}
-                  onBlur={() => save({ address: local.address })}
-                  placeholder="Via, città, paese"
-                  className="flex-1 px-4 py-2.5 rounded-2xl bg-white/70 dark:bg-slate-800/60 border border-white/40 dark:border-white/10 outline-none focus:ring-2 focus:ring-amber-400 text-slate-900 dark:text-slate-50"
-                />
-                <button
-                  data-testid="geocode-btn"
-                  onClick={geocode}
-                  className="px-3 py-2 rounded-2xl bg-gradient-to-r from-amber-500 to-orange-500 text-white text-sm font-semibold flex items-center gap-1"
-                >
-                  <MapPin size={14} /> Geolocalizza
-                </button>
-              </div>
-              <div className="grid grid-cols-2 gap-2">
-                <label className="block">
-                  <div className="text-[10px] uppercase tracking-widest text-slate-500 mb-1">Latitudine</div>
-                  <input
-                    type="number" step="0.0001"
-                    data-testid="lat-input"
-                    value={local.latitude ?? 0}
-                    onChange={(e) => setLocal({ ...local, latitude: parseFloat(e.target.value) })}
-                    onBlur={() => save({ latitude: local.latitude })}
-                    className="w-full px-3 py-2 rounded-xl bg-white/70 dark:bg-slate-800/60 border border-white/40 dark:border-white/10 outline-none focus:ring-2 focus:ring-amber-400 font-mono text-sm text-slate-900 dark:text-slate-50"
-                  />
-                </label>
-                <label className="block">
-                  <div className="text-[10px] uppercase tracking-widest text-slate-500 mb-1">Longitudine</div>
-                  <input
-                    type="number" step="0.0001"
-                    data-testid="lon-input"
-                    value={local.longitude ?? 0}
-                    onChange={(e) => setLocal({ ...local, longitude: parseFloat(e.target.value) })}
-                    onBlur={() => save({ longitude: local.longitude })}
-                    className="w-full px-3 py-2 rounded-xl bg-white/70 dark:bg-slate-800/60 border border-white/40 dark:border-white/10 outline-none focus:ring-2 focus:ring-amber-400 font-mono text-sm text-slate-900 dark:text-slate-50"
-                  />
-                </label>
-              </div>
+        <Section title="Posizione geografica" hint="Usata per alba/tramonto e per il meteo reale che anima lo sfondo.">
+          <div className="space-y-2">
+            <div className="flex gap-2">
+              <input data-testid="address-input" className="field flex-1" value={local.address || ""} onChange={(e) => setLocal({ ...local, address: e.target.value })} onBlur={() => save({ address: local.address }, true)} placeholder="Via, città, paese" />
+              <button data-testid="geocode-btn" onClick={geocode} className="btn-acc px-3 py-2 rounded-2xl text-sm font-semibold flex items-center gap-1 shrink-0"><MapPin size={14} /> Geolocalizza</button>
             </div>
-          </Section>
-
-          {/* Dynamic colors */}
-          <Section title="Colori dinamici" hint="Cambia i colori dell'interfaccia con la posizione del sole.">
-            <ToggleRow
-              testid="dynamic-colors-toggle"
-              active={!!local.dynamic_colors}
-              onClick={() => save({ dynamic_colors: !local.dynamic_colors })}
-              iconOn={<Sparkles size={16} />}
-              label={local.dynamic_colors ? "Attivi (alba / giorno / tramonto / notte)" : "Disattivati"}
-            />
-          </Section>
-
-          {/* Theme mode */}
-          <Section title="Tema">
-            <div className="flex gap-2 flex-wrap">
-              {[
-                { k: "auto", l: "Automatico (segue sole)", icon: <Sparkles size={14} /> },
-                { k: "light", l: "Chiaro", icon: <Sun size={14} /> },
-                { k: "dark", l: "Scuro", icon: <Moon size={14} /> },
-              ].map((o) => (
-                <button
-                  key={o.k}
-                  data-testid={`theme-${o.k}`}
-                  onClick={() => save({ theme_mode: o.k })}
-                  className={`px-3.5 py-2 rounded-full text-sm font-semibold flex items-center gap-1.5 border transition-all ${
-                    local.theme_mode === o.k
-                      ? "bg-gradient-to-r from-amber-500 to-orange-500 text-white border-transparent shadow-md"
-                      : "bg-white/60 dark:bg-slate-800/60 border-white/40 dark:border-white/10 text-slate-700 dark:text-slate-200"
-                  }`}
-                >
-                  {o.icon} {o.l}
-                </button>
-              ))}
-            </div>
-          </Section>
-
-          {/* HA Integration status */}
-          <Section title="Integrazioni Home Assistant (mock)">
             <div className="grid grid-cols-2 gap-2">
-              {["Sonoff eWeLink", "Tuya Smart Life", "TP-Link Tapo", "Blink"].map((n) => (
-                <div key={n} className="glass rounded-2xl px-3 py-2 flex items-center justify-between">
-                  <span className="text-sm font-medium">{n}</span>
-                  <span className="text-[10px] uppercase tracking-widest text-emerald-600 dark:text-emerald-400 flex items-center gap-1">
-                    <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" /> collegato
-                  </span>
-                </div>
-              ))}
+              <label className="block"><div className="label mb-1">Latitudine</div>
+                <input type="number" step="0.0001" data-testid="lat-input" className="field font-mono" value={local.latitude ?? 0} onChange={(e) => setLocal({ ...local, latitude: parseFloat(e.target.value) })} onBlur={() => save({ latitude: local.latitude })} /></label>
+              <label className="block"><div className="label mb-1">Longitudine</div>
+                <input type="number" step="0.0001" data-testid="lon-input" className="field font-mono" value={local.longitude ?? 0} onChange={(e) => setLocal({ ...local, longitude: parseFloat(e.target.value) })} onBlur={() => save({ longitude: local.longitude })} /></label>
             </div>
-          </Section>
-        </div>
+          </div>
+        </Section>
+
+        <Section title="Atmosfera" hint="Lo sfondo segue il sole (alba, giorno, tramonto, cielo stellato) e il meteo (nuvole, pioggia sul vetro, neve, nebbia, temporale).">
+          <button data-testid="dynamic-colors-toggle" onClick={() => save({ dynamic_colors: !local.dynamic_colors })} className="w-full glass-inner rounded-2xl px-4 py-3 flex items-center justify-between mb-3">
+            <span className="text-sm flex items-center gap-2"><Sparkles size={15} /> Sfondo dinamico {local.dynamic_colors ? "attivo" : "disattivato"}</span>
+            <span className={`toggle ${local.dynamic_colors ? "on" : ""}`} />
+          </button>
+          <div className="label mb-1.5">Tema</div>
+          <div className="flex gap-2 flex-wrap mb-4">
+            {[{ k: "auto", l: "Automatico (segue il sole)", I: Sparkles }, { k: "light", l: "Chiaro", I: Sun }, { k: "dark", l: "Scuro", I: Moon }].map(({ k, l, I }) => (
+              <button key={k} data-testid={`theme-${k}`} onClick={() => save({ theme_mode: k })} className={`chip ${local.theme_mode === k ? "chip-active" : ""}`}><I size={13} /> {l}</button>
+            ))}
+          </div>
+          <div className="label mb-1.5">Meteo sfondo {weather?.source === "open-meteo" && <span className="normal-case tracking-normal font-normal">· rilevato: {weather.condition}{weather.temperature != null ? `, ${Math.round(weather.temperature)}°C` : ""}</span>}</div>
+          <div className="flex gap-2 flex-wrap">
+            {WEATHER.map(({ k, l, I }) => (
+              <button key={k} data-testid={`weather-${k}`} onClick={async () => { await save({ weather_override: k }, true); await refresh(); }} className={`chip ${(local.weather_override || "auto") === k ? "chip-active" : ""}`}><I size={13} /> {l}</button>
+            ))}
+          </div>
+        </Section>
+
+        <Section title="Preset colore luci" hint="Le tinte rapide mostrate su ogni luce e nell'editor scene.">
+          <div className="flex flex-wrap gap-2 mb-3">
+            {presets.map((p, i) => (
+              <div key={`${p.name}-${i}`} className="glass-inner rounded-full pl-1 pr-2 py-1 flex items-center gap-2 text-xs" data-testid={`settings-preset-${i}`}>
+                <span className="w-6 h-6 rounded-full border border-white/70" style={{ background: rgbToHex(p.rgb) }} />
+                <span className="font-medium">{p.name}</span>
+                <button onClick={() => save({ color_presets: presets.filter((_, j) => j !== i) })} className="text-muted hover:text-rose-600" data-testid={`settings-preset-remove-${i}`} aria-label="Rimuovi"><X size={12} /></button>
+              </div>
+            ))}
+          </div>
+          <div className="flex items-center gap-2 flex-wrap">
+            <button onClick={() => setShowWheel((v) => !v)} className="w-9 h-9 rounded-full border-2 border-white/80 shadow" style={{ background: rgbToHex(newPreset.rgb) }} data-testid="settings-preset-wheel-toggle" aria-label="Scegli colore" />
+            <input className="field !w-48" placeholder="Nome preset" value={newPreset.name} onChange={(e) => setNewPreset({ ...newPreset, name: e.target.value })} data-testid="settings-preset-name" />
+            <button onClick={addPreset} className="btn-acc px-3 py-2 rounded-2xl text-sm font-semibold flex items-center gap-1" data-testid="settings-preset-add"><Plus size={14} /> Aggiungi</button>
+          </div>
+          {showWheel && <div className="mt-3"><ColorWheel size={180} rgb={newPreset.rgb} onChange={(rgb) => setNewPreset({ ...newPreset, rgb })} testid="settings-preset-wheel" /></div>}
+        </Section>
+
+        <Section title="Loghi e media" hint="Metti i file in /public/brand/ e compariranno automaticamente.">
+          <div className="glass-inner rounded-2xl p-3 text-xs space-y-1 font-mono">
+            <div className="flex items-center gap-2 text-muted"><ImageIcon size={12} /> domus.png · sol.png · terminus.png (loghi)</div>
+            <div className="flex items-center gap-2 text-muted"><ImageIcon size={12} /> sol.mp4 / sol.gif / sol.jpg · terminus.mp4 / terminus.gif / terminus.jpg (sfondi animati)</div>
+          </div>
+        </Section>
+
+        <Section title="Integrazioni Home Assistant (mock)">
+          <div className="grid grid-cols-2 gap-2">
+            {["Sonoff eWeLink", "Tuya Smart Life", "TP-Link Tapo", "Blink"].map((n) => (
+              <div key={n} className="glass-inner rounded-2xl px-3 py-2 flex items-center justify-between">
+                <span className="text-sm font-medium">{n}</span>
+                <span className="label text-emerald-700 dark:text-emerald-400 flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" /> ok</span>
+              </div>
+            ))}
+          </div>
+        </Section>
       </div>
-    </div>
+    </Modal>
   );
 }
 
 function Section({ title, hint, children }) {
   return (
     <div>
-      <div className="text-xs uppercase tracking-widest text-slate-500 mb-2">{title}</div>
-      {hint && <div className="text-xs text-slate-500 mb-2">{hint}</div>}
+      <div className="label mb-1.5">{title}</div>
+      {hint && <p className="text-xs text-muted mb-2.5">{hint}</p>}
       {children}
     </div>
-  );
-}
-
-function ToggleRow({ active, onClick, label, iconOn, testid }) {
-  return (
-    <button
-      data-testid={testid}
-      onClick={onClick}
-      className="w-full flex items-center justify-between glass rounded-2xl px-4 py-3 hover:scale-[1.01] transition"
-    >
-      <span className="flex items-center gap-2 text-sm">{iconOn} {label}</span>
-      <span className={`relative w-11 h-6 rounded-full transition-colors ${active ? "bg-emerald-500" : "bg-slate-300 dark:bg-slate-600"}`}>
-        <span className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full transition-transform ${active ? "translate-x-5" : ""}`} />
-      </span>
-    </button>
   );
 }

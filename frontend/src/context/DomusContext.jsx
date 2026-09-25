@@ -1,5 +1,5 @@
 import { createContext, useContext, useEffect, useMemo, useState, useCallback } from "react";
-import { RoomsAPI, EntitiesAPI, DiscoveredAPI, SettingsAPI, EventsAPI } from "@/lib/api";
+import { AppAPI, RoomsAPI, EntitiesAPI, DiscoveredAPI, SettingsAPI, EventsAPI, GroupsAPI, ScenesAPI, ClimateAPI } from "@/lib/api";
 import { computePhase } from "@/lib/solar";
 
 const DomusCtx = createContext(null);
@@ -16,26 +16,27 @@ export function DomusProvider({ children }) {
   const [discovered, setDiscovered] = useState([]);
   const [settings, setSettings] = useState(null);
   const [events, setEvents] = useState([]);
+  const [groups, setGroups] = useState([]);
+  const [scenes, setScenes] = useState([]);
+  const [thermostats, setThermostats] = useState([]);
+  const [zones, setZones] = useState([]);
+  const [weather, setWeather] = useState(null);
   const [now, setNow] = useState(new Date());
   const [loading, setLoading] = useState(true);
 
   const refresh = useCallback(async () => {
-    const [r, e, d, s, ev] = await Promise.all([
-      RoomsAPI.list(),
-      EntitiesAPI.list(),
-      DiscoveredAPI.list(),
-      SettingsAPI.get(),
-      EventsAPI.list(30),
-    ]);
-    setRooms(r);
-    setEntities(e);
-    setDiscovered(d);
-    setSettings(s);
-    setEvents(ev);
+    const d = await AppAPI.data();
+    setRooms(d.rooms); setEntities(d.entities); setDiscovered(d.discovered); setSettings(d.settings);
+    setEvents(d.events); setGroups(d.groups); setScenes(d.scenes); setThermostats(d.thermostats);
+    setZones(d.zones); setWeather(d.weather);
     setLoading(false);
   }, []);
 
-  useEffect(() => { refresh(); }, [refresh]);
+  useEffect(() => {
+    refresh();
+    const t = setInterval(refresh, 30000);
+    return () => clearInterval(t);
+  }, [refresh]);
 
   useEffect(() => {
     const t = setInterval(() => setNow(new Date()), 60000);
@@ -55,49 +56,97 @@ export function DomusProvider({ children }) {
   }, [settings, phase]);
 
   useEffect(() => {
-    const root = document.documentElement;
-    if (effectiveTheme === "dark") root.classList.add("dark");
-    else root.classList.remove("dark");
+    document.documentElement.classList.toggle("dark", effectiveTheme === "dark");
   }, [effectiveTheme]);
 
-  // Entity actions with optimistic update
+  const mergeEntities = useCallback((affected = []) => {
+    if (!affected.length) return;
+    const map = new Map(affected.map((a) => [a.id, a]));
+    setEntities((prev) => prev.map((e) => map.get(e.id) || e));
+  }, []);
+
+  const applyClimate = useCallback((snap) => {
+    if (!snap) return;
+    if (snap.thermostats) setThermostats(snap.thermostats);
+    if (snap.entities) setEntities(snap.entities);
+    if (snap.zones) setZones(snap.zones);
+  }, []);
+
+  // ---- Entities
   const updateEntity = async (id, patch) => {
     setEntities((prev) => prev.map((x) => (x.id === id ? { ...x, ...patch, state: { ...(x.state || {}), ...(patch.state || {}) } } : x)));
-    try { await EntitiesAPI.update(id, patch); } catch (err) { await refresh(); throw err; }
+    try { const res = await EntitiesAPI.update(id, patch); mergeEntities(res.affected); }
+    catch (err) { await refresh(); throw err; }
   };
-
   const moveEntity = async (id, roomId) => {
     setEntities((prev) => prev.map((x) => (x.id === id ? { ...x, room_id: roomId || null } : x)));
     try { await EntitiesAPI.move(id, roomId); } catch (err) { await refresh(); throw err; }
   };
-
   const deleteEntity = async (id) => {
     setEntities((prev) => prev.filter((x) => x.id !== id));
-    try { await EntitiesAPI.remove(id); } catch (err) { await refresh(); throw err; }
+    try { await EntitiesAPI.remove(id); await refresh(); } catch (err) { await refresh(); throw err; }
   };
 
-  const createRoom = async (data) => { const r = await RoomsAPI.create(data); setRooms((prev) => [...prev, r]); return r; };
-  const updateRoom = async (id, data) => { const r = await RoomsAPI.update(id, data); setRooms((prev) => prev.map((x) => (x.id === id ? r : x))); return r; };
-  const deleteRoom = async (id) => { await RoomsAPI.remove(id); setRooms((prev) => prev.filter((x) => x.id !== id)); await refresh(); };
+  // ---- Rooms
+  const createRoom = async (data) => { const r = await RoomsAPI.create(data); setRooms((p) => [...p, r]); return r; };
+  const updateRoom = async (id, data) => { const r = await RoomsAPI.update(id, data); setRooms((p) => p.map((x) => (x.id === id ? r : x))); return r; };
+  const deleteRoom = async (id) => { await RoomsAPI.remove(id); await refresh(); };
 
+  // ---- Discovered
   const assignDiscovered = async (discId, roomId) => {
     const created = await DiscoveredAPI.assign(discId, roomId);
-    setEntities((prev) => [...prev, created]);
-    setDiscovered((prev) => prev.filter((x) => x.id !== discId));
+    setEntities((p) => [...p, created]);
+    setDiscovered((p) => p.filter((x) => x.id !== discId));
     return created;
   };
-  const mockDiscovery = async () => { const d = await DiscoveredAPI.mock(); setDiscovered((prev) => [...prev, d]); return d; };
+  const mockDiscovery = async () => { const d = await DiscoveredAPI.mock(); setDiscovered((p) => [...p, d]); return d; };
 
+  // ---- Settings / events
   const updateSettings = async (data) => { const s = await SettingsAPI.update(data); setSettings(s); return s; };
+  const reloadEvents = async () => { setEvents(await EventsAPI.list(30)); };
 
-  const reloadEvents = async () => { const ev = await EventsAPI.list(30); setEvents(ev); };
+  // ---- Groups
+  const createGroup = async (data) => { const g = await GroupsAPI.create(data); setGroups((p) => [...p, g]); return g; };
+  const updateGroup = async (id, data) => { const g = await GroupsAPI.update(id, data); setGroups((p) => p.map((x) => (x.id === id ? g : x))); return g; };
+  const deleteGroup = async (id) => { await GroupsAPI.remove(id); setGroups((p) => p.filter((x) => x.id !== id)); };
+  const toggleGroup = async (id, on) => {
+    const g = groups.find((x) => x.id === id);
+    if (g) {
+      const target = on === undefined ? !(entities.find((e) => e.id === g.primary_id)?.state?.on ?? g.members.some((m) => entities.find((e) => e.id === m)?.state?.on)) : on;
+      setEntities((prev) => prev.map((e) => (g.members.includes(e.id) ? { ...e, state: { ...e.state, on: target } } : e)));
+    }
+    try { const res = await GroupsAPI.toggle(id, on); mergeEntities(res.affected); } catch (err) { await refresh(); throw err; }
+  };
+
+  // ---- Scenes
+  const createScene = async (data) => { const s = await ScenesAPI.create(data); setScenes((p) => [...p, s]); return s; };
+  const updateScene = async (id, data) => { const s = await ScenesAPI.update(id, data); setScenes((p) => p.map((x) => (x.id === id ? s : x))); return s; };
+  const deleteScene = async (id) => { await ScenesAPI.remove(id); setScenes((p) => p.filter((x) => x.id !== id)); };
+  const activateScene = async (id) => { const res = await ScenesAPI.activate(id); mergeEntities(res.affected); };
+
+  // ---- Climate
+  const createThermostat = async (data) => applyClimate(await ClimateAPI.createThermostat(data));
+  const updateThermostat = async (id, patch) => {
+    setThermostats((prev) => prev.map((t) => (t.id === id ? { ...t, ...patch } : t)));
+    try { applyClimate(await ClimateAPI.updateThermostat(id, patch)); } catch (err) { await refresh(); throw err; }
+  };
+  const deleteThermostat = async (id) => applyClimate(await ClimateAPI.removeThermostat(id));
+  const createZone = async (data) => { const z = await ClimateAPI.createZone(data); setZones((p) => [...p, z]); return z; };
+  const updateZone = async (id, data) => { const z = await ClimateAPI.updateZone(id, data); setZones((p) => p.map((x) => (x.id === id ? z : x))); return z; };
+  const deleteZone = async (id) => { await ClimateAPI.removeZone(id); setZones((p) => p.filter((x) => x.id !== id)); };
+  const setZone = async (id, body) => applyClimate(await ClimateAPI.setZone(id, body));
+  const setAllZones = async (body) => applyClimate(await ClimateAPI.setAllZones(body));
 
   const value = {
-    rooms, entities, discovered, settings, events,
+    rooms, entities, discovered, settings, events, groups, scenes, thermostats, zones, weather,
     loading, now, phase, effectiveTheme,
     refresh, updateEntity, moveEntity, deleteEntity,
     createRoom, updateRoom, deleteRoom,
     assignDiscovered, mockDiscovery, updateSettings, reloadEvents,
+    createGroup, updateGroup, deleteGroup, toggleGroup,
+    createScene, updateScene, deleteScene, activateScene,
+    createThermostat, updateThermostat, deleteThermostat,
+    createZone, updateZone, deleteZone, setZone, setAllZones,
   };
 
   return <DomusCtx.Provider value={value}>{children}</DomusCtx.Provider>;
