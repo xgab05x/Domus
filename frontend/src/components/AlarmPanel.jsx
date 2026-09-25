@@ -1,21 +1,26 @@
-import { ShieldCheck, ShieldAlert, ShieldOff, Radar, DoorOpen, DoorClosed } from "lucide-react";
+import { useState } from "react";
+import { ShieldCheck, ShieldAlert, ShieldOff } from "lucide-react";
 import { useDomus } from "@/context/DomusContext";
 import { AlarmAPI } from "@/lib/api";
 import { toast } from "sonner";
+import SecurityCard from "@/components/SecurityCard";
+import SensorDetail from "@/components/SensorDetail";
 
 const MODES = [
   { k: "disarmed", l: "Disarmato", icon: ShieldOff, tone: "rgba(110,122,140,0.22)", fg: "inherit" },
   { k: "home", l: "Armato Home", icon: ShieldCheck, tone: "rgba(90,150,120,0.24)", fg: "#2f6b4f" },
   { k: "away", l: "Armato Away", icon: ShieldAlert, tone: "rgba(190,90,90,0.22)", fg: "#8f3b3b" },
 ];
-const zoneIcon = { contact: DoorClosed, motion: Radar, glassbreak: DoorOpen };
-const KIND_LABEL = { contact: "contatto", motion: "movimento", glassbreak: "rottura vetri" };
 
-export default function AlarmPanel() {
-  const { entities, settings, updateSettings, updateEntity, reloadEvents } = useDomus();
-  const zones = entities.filter((e) => e.type === "alarm_zone");
+export default function AlarmPanel({ zones: zonesProp }) {
+  const { entities, settings, updateSettings, reloadEvents } = useDomus();
+  const zones = zonesProp || entities.filter((e) => e.type === "alarm_zone");
   const mode = settings?.alarm_armed || "disarmed";
   const current = MODES.find((m) => m.k === mode) || MODES[0];
+  const [open, setOpen] = useState(null);
+  const openZone = entities.find((e) => e.id === open);
+  const triggered = zones.filter((z) => z.state?.triggered).length;
+  const bypassed = zones.filter((z) => z.state?.bypass).length;
 
   const setMode = async (m) => {
     await AlarmAPI.set(m);
@@ -49,27 +54,15 @@ export default function AlarmPanel() {
         })}
       </div>
 
-      <div className="label mb-2">Zone rilevate</div>
-      <div className="grid grid-cols-2 gap-2">
-        {zones.map((z) => {
-          const kind = z.state?.kind || "contact";
-          const Icon = zoneIcon[kind] || Radar;
-          const bypass = !!z.state?.bypass;
-          const triggered = !!z.state?.triggered;
-          return (
-            <div key={z.id} className={`rounded-2xl p-3 flex items-center gap-3 ${triggered ? "bg-rose-500/10 ring-1 ring-rose-400/40" : "glass-inner"}`} data-testid={`zone-${z.id}`}>
-              <div className={`icon-btn w-9 h-9 shrink-0 ${triggered ? "bg-rose-500/80 text-white" : "icon-on"}`}><Icon size={15} /></div>
-              <div className="flex-1 min-w-0">
-                <div className="font-semibold text-sm truncate">{z.name}</div>
-                <div className="label">{KIND_LABEL[kind] || kind}</div>
-              </div>
-              <button data-testid={`zone-bypass-${z.id}`} onClick={() => updateEntity(z.id, { state: { bypass: !bypass } })} className={`chip !py-0.5 !px-2 !text-[10px] ${bypass ? "chip-active" : ""}`}>
-                {bypass ? "bypass" : "attiva"}
-              </button>
-            </div>
-          );
-        })}
+      <div className="flex items-center justify-between mb-2">
+        <div className="label">Zone ({zones.length})</div>
+        <div className="text-[10px] text-muted" data-testid="alarm-zone-summary">{triggered ? <span className="text-rose-600 font-semibold">{triggered} attive</span> : "tutto a riposo"}{bypassed ? ` · ${bypassed} bypass` : ""}</div>
       </div>
+      <div className="grid grid-cols-1 gap-2" data-testid="alarm-zones">
+        {zones.map((z) => <SecurityCard key={z.id} entity={z} compact onOpen={() => setOpen(z.id)} />)}
+        {zones.length === 0 && <div className="text-xs text-muted py-2">Nessuna zona in questa vista.</div>}
+      </div>
+      <SensorDetail entity={openZone} open={!!openZone} onClose={() => setOpen(null)} />
     </div>
   );
 }

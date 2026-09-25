@@ -1,8 +1,11 @@
 import { useEffect, useState } from "react";
-import { MapPin, Sun, Moon, Sparkles, Settings as SettingsIcon, Cloud, CloudRain, CloudSnow, CloudFog, CloudLightning, Wand2, X, Plus, Image as ImageIcon } from "lucide-react";
+import { MapPin, Sun, Moon, Sparkles, Settings as SettingsIcon, Cloud, CloudRain, CloudSnow, CloudFog, CloudLightning, Wand2, X, Plus, Image as ImageIcon, Cpu, HardDrive, AlertTriangle, Home } from "lucide-react";
 import { toast } from "sonner";
 import Modal from "@/components/Modal";
 import ColorWheel from "@/components/ColorWheel";
+import HASettings from "@/components/HASettings";
+import BackupSettings from "@/components/BackupSettings";
+import ProblemsSection from "@/components/ProblemsSection";
 import { useDomus } from "@/context/DomusContext";
 import { rgbToHex } from "@/lib/color";
 
@@ -10,15 +13,19 @@ const WEATHER = [
   { k: "auto", l: "Automatico", I: Wand2 }, { k: "clear", l: "Sereno", I: Sun }, { k: "clouds", l: "Nuvoloso", I: Cloud },
   { k: "fog", l: "Nebbia", I: CloudFog }, { k: "rain", l: "Pioggia", I: CloudRain }, { k: "snow", l: "Neve", I: CloudSnow }, { k: "storm", l: "Temporale", I: CloudLightning },
 ];
+const TABS = [{ k: "general", l: "Casa", I: Home }, { k: "ha", l: "Home Assistant", I: Cpu }, { k: "backup", l: "Backup", I: HardDrive }, { k: "problems", l: "Problemi", I: AlertTriangle }];
 
-export default function SettingsDialog({ open, onOpenChange }) {
-  const { settings, weather, updateSettings, refresh } = useDomus();
+export default function SettingsDialog({ open, onOpenChange, initialTab = "general" }) {
+  const { settings, weather, updateSettings, refresh, ha, notifications, entities } = useDomus();
   const [local, setLocal] = useState(settings);
   const [newPreset, setNewPreset] = useState({ name: "", rgb: [255, 200, 120] });
   const [showWheel, setShowWheel] = useState(false);
+  const [tab, setTab] = useState(initialTab);
 
   useEffect(() => { setLocal(settings); }, [settings, open]);
+  useEffect(() => { if (open) setTab(initialTab); }, [open, initialTab]);
   if (!open || !local) return null;
+  const problems = entities.filter((e) => e.available === false).length + notifications.filter((n) => !n.read && (n.level === "warning" || n.level === "error")).length;
 
   const save = async (patch, silent = false) => {
     setLocal((prev) => ({ ...prev, ...patch }));
@@ -48,8 +55,20 @@ export default function SettingsDialog({ open, onOpenChange }) {
   };
 
   return (
-    <Modal open={open} onClose={() => onOpenChange(false)} title="Impostazioni Domus" subtitle="Casa, posizione, atmosfera e preset" icon={<SettingsIcon size={18} />} testid="settings-dialog" width="max-w-2xl">
-      <div className="space-y-7">
+    <Modal open={open} onClose={() => onOpenChange(false)} title="Impostazioni Domus" subtitle="Casa, Home Assistant, backup e stato dei dispositivi" icon={<SettingsIcon size={18} />} testid="settings-dialog" width="max-w-3xl">
+      <div className="flex items-center gap-1 p-1 rounded-full glass-inner mb-6 flex-wrap" data-testid="settings-tabs">
+        {TABS.map(({ k, l, I }) => (
+          <button key={k} onClick={() => setTab(k)} className={`chip !py-1.5 relative ${tab === k ? "chip-active" : "!bg-transparent !border-transparent"}`} data-testid={`settings-tab-${k}`}>
+            <I size={13} /> {l}
+            {k === "ha" && <span className={`w-1.5 h-1.5 rounded-full ${ha?.connected ? "bg-emerald-500" : "bg-slate-400"}`} />}
+            {k === "problems" && problems > 0 && <span className="min-w-[16px] h-4 px-1 rounded-full bg-amber-500 text-white text-[10px] font-bold flex items-center justify-center" data-testid="settings-problems-badge">{problems}</span>}
+          </button>
+        ))}
+      </div>
+      {tab === "ha" && <HASettings />}
+      {tab === "backup" && <BackupSettings />}
+      {tab === "problems" && <ProblemsSection />}
+      {tab === "general" && <div className="space-y-7">
         <Section title="Nome casa">
           <input data-testid="home-name-input" className="field" value={local.home_name || ""} onChange={(e) => setLocal({ ...local, home_name: e.target.value })} onBlur={() => save({ home_name: local.home_name })} />
         </Section>
@@ -109,21 +128,10 @@ export default function SettingsDialog({ open, onOpenChange }) {
         <Section title="Loghi e media" hint="Metti i file in /public/brand/ e compariranno automaticamente.">
           <div className="glass-inner rounded-2xl p-3 text-xs space-y-1 font-mono">
             <div className="flex items-center gap-2 text-muted"><ImageIcon size={12} /> domus.png · sol.png · terminus.png (loghi)</div>
-            <div className="flex items-center gap-2 text-muted"><ImageIcon size={12} /> sol.mp4 / sol.gif / sol.jpg · terminus.mp4 / terminus.gif / terminus.jpg (sfondi animati)</div>
+            <div className="flex items-center gap-2 text-muted"><ImageIcon size={12} /> sol-banner.webp · terminus-banner.webp (banner animati)</div>
           </div>
         </Section>
-
-        <Section title="Integrazioni Home Assistant (mock)">
-          <div className="grid grid-cols-2 gap-2">
-            {["Sonoff eWeLink", "Tuya Smart Life", "TP-Link Tapo", "Blink"].map((n) => (
-              <div key={n} className="glass-inner rounded-2xl px-3 py-2 flex items-center justify-between">
-                <span className="text-sm font-medium">{n}</span>
-                <span className="label text-emerald-700 dark:text-emerald-400 flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" /> ok</span>
-              </div>
-            ))}
-          </div>
-        </Section>
-      </div>
+      </div>}
     </Modal>
   );
 }

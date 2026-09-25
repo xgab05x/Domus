@@ -55,6 +55,29 @@ export const DiscoveredAPI = {
   mock: () => d(http.post("/discovered/mock")),
 };
 
+export const MetersAPI = {
+  list: () => d(http.get("/meters")),
+  create: (data) => d(http.post("/meters", data)),
+  update: (id, data) => d(http.patch(`/meters/${id}`, data)),
+  remove: (id) => d(http.delete(`/meters/${id}`)),
+};
+
+export const ChartsAPI = {
+  create: (data) => d(http.post("/charts", data)),
+  update: (id, data) => d(http.patch(`/charts/${id}`, data)),
+  remove: (id) => d(http.delete(`/charts/${id}`)),
+};
+
+export const HistoryAPI = { get: (kind, id, range) => d(http.get("/history", { params: { kind, id, range } })) };
+export const EnergyAPI = { summary: () => d(http.get("/energy/summary")) };
+
+export const NotificationsAPI = {
+  list: (limit = 50) => d(http.get("/notifications", { params: { limit } })),
+  readAll: () => d(http.post("/notifications/read-all")),
+  clear: () => d(http.delete("/notifications")),
+  setAvailability: (id, available) => d(http.post(`/entities/${id}/availability`, null, { params: { available } })),
+};
+
 export const SettingsAPI = {
   get: () => d(http.get("/settings")),
   update: (data) => d(http.patch("/settings", data)),
@@ -68,3 +91,43 @@ export const IntercomAPI = {
 };
 
 export const AlarmAPI = { set: (mode) => d(http.post(`/alarm/set/${mode}`)) };
+
+export const ViewsAPI = {
+  list: () => d(http.get("/views")),
+  create: (data) => d(http.post("/views", data)),
+  update: (id, data) => d(http.patch(`/views/${id}`, data)),
+  remove: (id) => d(http.delete(`/views/${id}`)),
+};
+
+export const CamerasAPI = {
+  ptz: (id, body) => d(http.post(`/cameras/${id}/ptz`, body)),
+  simulateMotion: (id) => d(http.post(`/cameras/${id}/simulate-motion`)),
+  snapshotUrl: (id, t = 0) => `${API}/cameras/${id}/snapshot?t=${t}`,
+  streamUrl: (id) => `${API}/cameras/${id}/stream`,
+};
+
+export const MediaAPI = {
+  command: (id, command, value) => d(http.post(`/media/${id}/command`, { command, value })),
+  tts: (message, ids, announce = true) => d(http.post("/media/tts", { message, ids, announce })),
+  notify: (title, message, ids, duration = 8) => d(http.post("/media/notify", { title, message, ids, duration })),
+};
+
+export const HAAPI = {
+  status: () => d(http.get("/ha/status")),
+  check: () => d(http.post("/ha/check")),
+  config: (data) => d(http.post("/ha/config", data)),
+  import: () => d(http.post("/ha/import", null, { timeout: 120000 })),
+  states: (limit = 500) => d(http.get("/ha/states", { params: { limit } })),
+  proxyUrl: (path) => `${API}/ha/proxy?path=${encodeURIComponent(path)}`,
+};
+
+export const BackupsAPI = {
+  list: () => d(http.get("/backups")),
+  create: (label) => d(http.post("/backups", null, { params: label ? { label } : {} })),
+  restore: (name, includeSettings = true) => d(http.post(`/backups/${encodeURIComponent(name)}/restore`, null, { params: { include_settings: includeSettings } })),
+  remove: (name) => d(http.delete(`/backups/${encodeURIComponent(name)}`)),
+  downloadUrl: (name) => `${API}/backups/${encodeURIComponent(name)}/download`,
+  upload: (file, restore = false) => { const fd = new FormData(); fd.append("file", file); return d(http.post("/backups/import", fd, { params: { restore }, headers: { "Content-Type": "multipart/form-data" } })); },
+};
+
+export const ProblemsAPI = { list: () => d(http.get("/problems")) };

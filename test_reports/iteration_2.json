@@ -1,0 +1,30 @@
+{
+  "summary": "Iteration 2 full-stack testing of Domus new features (sync/panel groups, scenes, climate/zones, color wheel, weather override, brand fallback). Backend: 17/17 pytest cases pass (new test_domus_v2.py) covering aggregate shape (7 rooms, 36 entities, 3 groups, 8 scenes, 3 thermostats, 2 zones, seed_version=2), weather override/reset, sync group propagation via Corridoio (Luce+2 Tasti), group toggle, panel groups presence, group CRUD, Cinema scene activation (Plafoniera off + LED TV on brightness 30 rgb [80,120,255]), scene CRUD, thermostat target 24 -> preset manual + demand true + shared Caldaia on + actuator target propagation, preset 'eco' -> effective_target 18.5, zone set/set-all/preset, thermostat & zone CRUD, climate/color preset persistence, regression rooms/discovered/alarm/intercom. Frontend: Sol Invictus loads with sky-background (data-phase/data-weather), brand fallback D, solar+weather widgets, tabs devices/climate/scenes; panel groups render 2 plates with 6 panel-btns; Corridoio sync group bubble with group-toggle flips aria-pressed and all 3 members; hidden members (Luce Corridoio, Tasto*) absent as standalone bubbles; Placca Cucina members still visible; brightness slider debounced-persists (50% -> saved 50); Cinema scene-activate updates devices and toast shown; Climate tab shows 2 zone-cards + 3 thermostat-cards with TempDial; open-climate-editor present. LightEditor modal opens with color-wheel + kelvin + brightness + preset-add prompt handling; Escape closes. GroupEditor create sync group with 2 members saves + toast + appears in /api/groups. Settings dialog weather-rain -> sky data-weather='rain' + sky-canvas mode='rain'. Terminus loads with theme-ter class, 4 cam-expand, 4 zone-bypass, alarm-home/away/disarmed with alarm-status updating. Mobile 390px: no horizontal overflow on Sol nor Terminus.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Dark-mode surfaces (from prior iteration, still present in some places)", "issues": ["Low contrast on some secondary text (e.g. member chips inside Corridoio group card 'Luce Corridoio' / Tasti labels appear near invisible on dark glass). Consider bumping to text-slate-100 for readability."]}
+    ]
+  },
+  "test_report_links": ["/app/backend/tests/test_domus_v2.py", "/app/backend/tests/test_domus_api.py", "/app/test_reports/pytest/pytest_v2.xml"],
+  "action_items": [
+    "Minor: LightEditor 'preset-add' triggers window.prompt — works, but consider replacing with in-app input for better UX and testability.",
+    "Minor: Review spec mentions 'intercom-simulate' but actual testid is 'intercom-simulate-ring'. Either update spec or rename testid for consistency."
+  ],
+  "critical_code_review_comments": [
+    "server.py apply_state (line 336): sync propagation only copies keys that already exist in the target's state (except 'on'). This is intentional to avoid mirroring rgb to a plain switch, but could surprise devs — worth a code comment.",
+    "server.py update_thermostat: setting target_temp force-resets preset to 'manual' unless preset also included; documented behaviour, ok.",
+    "SEED_VERSION bump correctly reseeds all collections and preserves settings baseline; well done.",
+    "Climate loop runs every 30s and mutates sensor states in-place; fine for a mock, but be aware tests reading current_temp may see drift — v2 tests avoid strict equality on temp values."
+  ],
+  "updated_files": ["/app/backend/tests/test_domus_v2.py", "/app/test_reports/iteration_2.json"],
+  "success_rate": {"backend": "100% (17/17 v2 + 13/13 v1)", "frontend": "100% of listed critical flows verified"},
+  "test_credentials": "None (no auth).",
+  "seed_data_creation": "Backend auto-seeds SEED_VERSION=2 baseline; tests create/delete TEST_ prefixed rooms, groups, scenes, thermostats, zones, entities and reset settings (weather_override, climate_presets, color_presets, alarm_armed, theme_mode) to defaults at the end.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Both backend test files (test_domus_api.py + test_domus_v2.py) form a stable regression suite. All required data-testids are wired: sky-background, sky-canvas, brand, switcher-sol-invictus/terminus, solar-phase-widget, weather-widget, tab-devices/climate/scenes, group-bubble-*, group-toggle-*, panel-btn-*, device-bubble-*, brightness-*, quick-color-*-*, open-light-editor-*, light-editor(-brightness/-kelvin/-wheel), preset-add/-remove-*, open-group-editor-btn, group-editor, group-new/-name/-kind-sync/-member-*/-display/-save/-delete, tab-climate, climate-panel, zone-card-*/-toggle/-minus/-plus/-target/-preset-*-eco, zones-toggle-all, thermostat-card-*, thermostat-dial-*/-current/-target/-minus/-plus/-status-*/-preset-*-*, open-climate-editor, open-settings-btn, settings-dialog, weather-rain/-auto, open-room-manager-btn, room-manager-dialog, cam-expand, alarm-home/-away/-disarmed, alarm-status, zone-bypass-*, intercom-simulate-ring (not 'intercom-simulate' as in spec). Weather override lands live in <1s. Note also that Cinema scene activation reduces 'ACCESI' count in header hero card (verified 15 -> 9).",
+  "rca of the issue": "N/A – no functional bugs found in this iteration."
+}

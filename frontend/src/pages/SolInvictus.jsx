@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { Plus, Home, Grid3x3, Sun, Lightbulb, Thermometer, Sparkles, Link2, Zap } from "lucide-react";
+import { Plus, Home, Grid3x3, Sun, Lightbulb, Thermometer, Sparkles, Link2, Zap, Tv } from "lucide-react";
 import { useDomus } from "@/context/DomusContext";
 import DeviceBubble from "@/components/DeviceBubble";
 import GroupBubble from "@/components/GroupBubble";
@@ -8,16 +8,20 @@ import UnassignedDrawer from "@/components/UnassignedDrawer";
 import RoomManagerDialog from "@/components/RoomManagerDialog";
 import ScenesPanel from "@/components/ScenesPanel";
 import ClimatePanel from "@/components/ClimatePanel";
-import { BrandLogo, BrandMotion } from "@/components/BrandMedia";
+import EnergyPanel from "@/components/EnergyPanel";
+import MediaPanel from "@/components/MediaPanel";
+import BannerArt from "@/components/BannerArt";
+import { BrandLogo } from "@/components/BrandMedia";
 import { PHASE_LABEL } from "@/lib/solar";
+import { iconFor } from "@/lib/icons";
 
-const CONTROLLABLE = new Set(["light", "plug", "switch", "thermostat", "sensor"]);
-const TABS = [{ k: "devices", l: "Dispositivi", I: Lightbulb }, { k: "climate", l: "Clima", I: Thermometer }, { k: "scenes", l: "Scene", I: Sparkles }];
+const CONTROLLABLE = new Set(["light", "plug", "switch", "meter", "thermostat", "sensor"]);
+const TABS = [{ k: "devices", l: "Dispositivi", I: Lightbulb }, { k: "climate", l: "Clima", I: Thermometer }, { k: "energy", l: "Consumi", I: Zap }, { k: "media", l: "Media", I: Tv }, { k: "scenes", l: "Scene", I: Sparkles }];
 const WEATHER_LABEL = { clear: "sereno", clouds: "nuvoloso", rain: "pioggia", snow: "neve", fog: "nebbia", storm: "temporale" };
 const GREETING = { dawn: "Buongiorno", day: "Buona giornata", sunset: "Buonasera", night: "Buonanotte" };
 
 export default function SolInvictus() {
-  const { rooms, entities, discovered, groups, thermostats, phase, settings, weather } = useDomus();
+  const { rooms, entities, discovered, groups, thermostats, phase, settings, weather, energy } = useDomus();
   const [tab, setTab] = useState("devices");
   const [filter, setFilter] = useState("all");
   const [roomMgrOpen, setRoomMgrOpen] = useState(false);
@@ -43,25 +47,24 @@ export default function SolInvictus() {
 
   return (
     <div className="space-y-8 fade-in">
-      <div className="glass rounded-[28px] p-6 md:p-8 relative overflow-hidden" data-testid="sol-hero">
-        <div className="absolute inset-y-0 right-0 w-2/3 [mask-image:linear-gradient(to_left,black,transparent_85%)] pointer-events-none">
-          <BrandMotion name="sol" className="opacity-25 dark:opacity-30" />
-        </div>
-        <div className="relative flex flex-col md:flex-row md:items-center gap-6">
-          <div className="flex items-start gap-4 flex-1">
-            <BrandLogo name="sol" size={56} className="rounded-2xl shrink-0" testid="brand-logo-sol" fallback={<div className="icon-btn icon-on w-14 h-14 shrink-0"><Sun size={26} /></div>} />
-            <div>
+      <div className="grid lg:grid-cols-[3fr_2fr] gap-4 items-stretch" data-testid="sol-hero">
+        <BannerArt name="sol" />
+        <div className="glass rounded-[28px] p-6 flex flex-col justify-between gap-5">
+          <div className="flex items-start gap-4">
+            <BrandLogo name="sol" size={72} className="shrink-0 drop-shadow-md" testid="brand-logo-sol" fallback={<div className="icon-btn icon-on w-14 h-14 shrink-0"><Sun size={26} /></div>} />
+            <div className="min-w-0">
               <div className="label text-acc">Sol Invictus</div>
-              <h1 className="font-display text-3xl sm:text-4xl font-semibold mt-1 leading-tight">{GREETING[phase.phase]}, {settings?.home_name || "casa"}.</h1>
-              <p className="text-sm text-muted mt-2 max-w-xl">
-                {PHASE_LABEL[phase.phase]}{weather ? ` · ${WEATHER_LABEL[weather.condition] || weather.condition}${weather.temperature != null ? `, ${Math.round(weather.temperature)}°C fuori` : ""}` : ""}. Luci, prese, clima e scene in un unico posto.
+              <h1 className="font-display text-2xl sm:text-3xl font-semibold mt-1 leading-tight">{GREETING[phase.phase]}, {settings?.home_name || "casa"}.</h1>
+              <p className="text-sm text-muted mt-2">
+                {PHASE_LABEL[phase.phase]}{weather ? ` · ${WEATHER_LABEL[weather.condition] || weather.condition}${weather.temperature != null ? `, ${Math.round(weather.temperature)}°C fuori` : ""}` : ""}. Luci, clima, consumi e scene in un unico posto.
               </p>
             </div>
           </div>
-          <div className="grid grid-cols-3 gap-3 md:w-[360px]">
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
             <Stat label="Accesi" value={totalOn} hint="dispositivi" testid="stat-on" />
             <Stat label="Stanze" value={rooms.length} hint="gestite" testid="stat-rooms" />
             <Stat label="Clima" value={climateOn} hint="termostati attivi" testid="stat-climate" />
+            <Stat label="Potenza" value={energy ? `${Math.round(energy.total_power_w)}` : "--"} hint="watt istantanei" testid="stat-power" />
           </div>
         </div>
       </div>
@@ -79,7 +82,7 @@ export default function SolInvictus() {
 
       <div className="flex items-center gap-2 flex-wrap" data-testid="room-filter">
         <FilterPill active={filter === "all"} onClick={() => setFilter("all")} icon={<Grid3x3 size={13} />} label="Tutte" testid="filter-all" />
-        {rooms.map((r) => <FilterPill key={r.id} active={filter === r.id} onClick={() => setFilter(r.id)} label={r.name} color={r.color} testid={`filter-${r.id}`} />)}
+        {rooms.map((r) => { const RI = iconFor(r.icon, Home); return <FilterPill key={r.id} active={filter === r.id} onClick={() => setFilter(r.id)} label={r.name} color={r.color} icon={<RI size={13} />} testid={`filter-${r.id}`} />; })}
         <FilterPill active={filter === "unassigned"} onClick={() => setFilter("unassigned")} icon={<Home size={13} />} label="Non assegnate" testid="filter-unassigned" />
       </div>
 
@@ -103,6 +106,8 @@ export default function SolInvictus() {
         </section>
       )}
       {tab === "climate" && <ClimatePanel roomFilter={filter} />}
+      {tab === "energy" && <EnergyPanel roomFilter={filter} />}
+      {tab === "media" && <MediaPanel roomFilter={filter} />}
       {tab === "scenes" && <ScenesPanel roomFilter={filter} />}
 
       <RoomManagerDialog open={roomMgrOpen} onOpenChange={setRoomMgrOpen} />

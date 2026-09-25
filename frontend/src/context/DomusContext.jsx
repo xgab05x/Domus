@@ -1,5 +1,6 @@
-import { createContext, useContext, useEffect, useMemo, useState, useCallback } from "react";
-import { AppAPI, RoomsAPI, EntitiesAPI, DiscoveredAPI, SettingsAPI, EventsAPI, GroupsAPI, ScenesAPI, ClimateAPI } from "@/lib/api";
+import { createContext, useContext, useEffect, useMemo, useState, useCallback, useRef } from "react";
+import { toast } from "sonner";
+import { AppAPI, RoomsAPI, EntitiesAPI, DiscoveredAPI, SettingsAPI, EventsAPI, GroupsAPI, ScenesAPI, ClimateAPI, MetersAPI, ChartsAPI, EnergyAPI, NotificationsAPI, ViewsAPI, MediaAPI, API } from "@/lib/api";
 import { computePhase } from "@/lib/solar";
 
 const DomusCtx = createContext(null);
@@ -21,22 +22,66 @@ export function DomusProvider({ children }) {
   const [thermostats, setThermostats] = useState([]);
   const [zones, setZones] = useState([]);
   const [weather, setWeather] = useState(null);
+  const [meters, setMeters] = useState([]);
+  const [charts, setCharts] = useState([]);
+  const [notifications, setNotifications] = useState([]);
+  const [energy, setEnergy] = useState(null);
+  const [views, setViews] = useState([]);
+  const [ha, setHa] = useState(null);
   const [now, setNow] = useState(new Date());
   const [loading, setLoading] = useState(true);
+  const seenNotif = useRef(null);
+
+  const ingestNotifications = useCallback((list) => {
+    setNotifications(list);
+    if (seenNotif.current === null) { seenNotif.current = new Set(list.map((n) => n.id)); return; }
+    list.filter((n) => !seenNotif.current.has(n.id)).reverse().forEach((n) => {
+      seenNotif.current.add(n.id);
+      (n.level === "warning" || n.level === "error" ? toast.warning : toast.info)(n.title, { description: n.message });
+    });
+  }, []);
 
   const refresh = useCallback(async () => {
     const d = await AppAPI.data();
     setRooms(d.rooms); setEntities(d.entities); setDiscovered(d.discovered); setSettings(d.settings);
     setEvents(d.events); setGroups(d.groups); setScenes(d.scenes); setThermostats(d.thermostats);
-    setZones(d.zones); setWeather(d.weather);
+    setZones(d.zones); setWeather(d.weather); setMeters(d.meters); setCharts(d.charts); setEnergy(d.energy);
+    setViews(d.views || []); setHa(d.ha || null);
+    ingestNotifications(d.notifications);
     setLoading(false);
-  }, []);
+  }, [ingestNotifications]);
 
   useEffect(() => {
     refresh();
     const t = setInterval(refresh, 30000);
-    return () => clearInterval(t);
-  }, [refresh]);
+    const n = setInterval(async () => { try { ingestNotifications(await NotificationsAPI.list(50)); } catch { /* offline */ } }, 10000);
+    return () => { clearInterval(t); clearInterval(n); };
+  }, [refresh, ingestNotifications]);
+
+  const mergeEntities = useCallback((affected = []) => {
+    if (!affected.length) return;
+    const map = new Map(affected.map((a) => [a.id, a]));
+    setEntities((prev) => prev.map((e) => map.get(e.id) || e));
+  }, []);
+
+  useEffect(() => {
+    let ws, timer, closed = false;
+    const connect = () => {
+      try { ws = new WebSocket(`${API.replace(/^http/, "ws")}/ws`); } catch { return; }
+      ws.onmessage = (ev) => {
+        try {
+          const m = JSON.parse(ev.data);
+          if (m.type === "entities") mergeEntities(m.affected);
+          else if (m.type === "ha") setHa(m.ha);
+          else if (m.type === "refresh") refresh();
+        } catch { /* ignore */ }
+      };
+      ws.onclose = () => { if (!closed) timer = setTimeout(connect, 6000); };
+      ws.onerror = () => ws.close();
+    };
+    connect();
+    return () => { closed = true; clearTimeout(timer); try { ws?.close(); } catch { /* noop */ } };
+  }, [mergeEntities, refresh]);
 
   useEffect(() => {
     const t = setInterval(() => setNow(new Date()), 60000);
@@ -58,12 +103,6 @@ export function DomusProvider({ children }) {
   useEffect(() => {
     document.documentElement.classList.toggle("dark", effectiveTheme === "dark");
   }, [effectiveTheme]);
-
-  const mergeEntities = useCallback((affected = []) => {
-    if (!affected.length) return;
-    const map = new Map(affected.map((a) => [a.id, a]));
-    setEntities((prev) => prev.map((e) => map.get(e.id) || e));
-  }, []);
 
   const applyClimate = useCallback((snap) => {
     if (!snap) return;
@@ -137,16 +176,50 @@ export function DomusProvider({ children }) {
   const setZone = async (id, body) => applyClimate(await ClimateAPI.setZone(id, body));
   const setAllZones = async (body) => applyClimate(await ClimateAPI.setAllZones(body));
 
+  // ---- Energy
+  const refreshEnergy = useCallback(async () => {
+    const [m, e, ents] = await Promise.all([MetersAPI.list(), EnergyAPI.summary(), EntitiesAPI.list({ type: "meter" })]);
+    setMeters(m); setEnergy(e);
+    const plugs = await EntitiesAPI.list({ type: "plug" });
+    mergeEntities([...ents, ...plugs]);
+  }, [mergeEntities]);
+  const createMeter = async (data) => setMeters(await MetersAPI.create(data));
+  const updateMeter = async (id, data) => setMeters(await MetersAPI.update(id, data));
+  const deleteMeter = async (id) => { await MetersAPI.remove(id); setMeters((p) => p.filter((m) => m.id !== id)); setCharts((p) => p.filter((c) => !(c.source_kind === "meter" && c.source_id === id))); };
+  const createChart = async (data) => { const c = await ChartsAPI.create(data); setCharts((p) => [...p, c]); return c; };
+  const updateChart = async (id, data) => { const c = await ChartsAPI.update(id, data); setCharts((p) => p.map((x) => (x.id === id ? c : x))); return c; };
+  const deleteChart = async (id) => { await ChartsAPI.remove(id); setCharts((p) => p.filter((x) => x.id !== id)); };
+
+  // ---- Notifications / availability
+  const markNotificationsRead = async () => { await NotificationsAPI.readAll(); setNotifications((p) => p.map((n) => ({ ...n, read: true }))); };
+  const clearNotifications = async () => { await NotificationsAPI.clear(); setNotifications([]); };
+  const setAvailability = async (id, available) => { const e = await NotificationsAPI.setAvailability(id, available); mergeEntities([e]); ingestNotifications(await NotificationsAPI.list(50)); };
+
+  // ---- Views (Terminus)
+  const createView = async (data) => { const v = await ViewsAPI.create(data); setViews((p) => [...p, v]); return v; };
+  const updateView = async (id, data) => { const v = await ViewsAPI.update(id, data); setViews((p) => p.map((x) => (x.id === id ? v : x))); return v; };
+  const deleteView = async (id) => { await ViewsAPI.remove(id); setViews((p) => p.filter((x) => x.id !== id)); };
+
+  // ---- Media
+  const mediaCommand = async (id, command, value) => {
+    const e = await MediaAPI.command(id, command, value);
+    mergeEntities([e]);
+    return e;
+  };
+
   const value = {
-    rooms, entities, discovered, settings, events, groups, scenes, thermostats, zones, weather,
+    rooms, entities, discovered, settings, events, groups, scenes, thermostats, zones, weather, meters, charts, notifications, energy, views, ha,
     loading, now, phase, effectiveTheme,
-    refresh, updateEntity, moveEntity, deleteEntity,
+    refresh, updateEntity, moveEntity, deleteEntity, mergeEntities, setHa,
     createRoom, updateRoom, deleteRoom,
     assignDiscovered, mockDiscovery, updateSettings, reloadEvents,
     createGroup, updateGroup, deleteGroup, toggleGroup,
     createScene, updateScene, deleteScene, activateScene,
     createThermostat, updateThermostat, deleteThermostat,
     createZone, updateZone, deleteZone, setZone, setAllZones,
+    refreshEnergy, createMeter, updateMeter, deleteMeter, createChart, updateChart, deleteChart,
+    markNotificationsRead, clearNotifications, setAvailability,
+    createView, updateView, deleteView, mediaCommand,
   };
 
   return <DomusCtx.Provider value={value}>{children}</DomusCtx.Provider>;
