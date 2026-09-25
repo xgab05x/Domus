@@ -123,7 +123,7 @@ export default function MediaDetail({ entity, open, onClose }) {
               <button onClick={() => updateEntity(entity.id, { state: { device_class: "tv", screen: true } })} className={`chip ${isTv ? "chip-active" : ""}`} data-testid="media-class-tv"><Tv size={13} /> Schermo</button>
               <button onClick={() => updateEntity(entity.id, { state: { device_class: "speaker" } })} className={`chip ${!isTv ? "chip-active" : ""}`} data-testid="media-class-speaker"><Speaker size={13} /> Altoparlante</button>
             </div>
-            {!isTv && <button onClick={() => updateEntity(entity.id, { state: { screen: !s.screen } })} className="mt-2 w-full glass-inner rounded-2xl px-3 py-2 flex items-center justify-between text-sm" data-testid="media-has-screen"><span>Ha uno schermo (Echo Show, Nest Hub)</span><span className={`toggle ${s.screen ? "on" : ""}`} /></button>}
+            <button onClick={() => !isTv && updateEntity(entity.id, { state: { screen: !s.screen } })} disabled={isTv} className="mt-2 w-full glass-inner rounded-2xl px-3 py-2 flex items-center justify-between text-sm disabled:opacity-60" data-testid="media-has-screen"><span>{isTv ? "Schermo: riceve notifiche testuali" : "Ha uno schermo (Echo Show, Nest Hub)"}</span><span className={`toggle ${isTv || s.screen ? "on" : ""}`} /></button>
           </div>
           <div className="glass-inner rounded-2xl p-3 text-xs space-y-1">
             <div className="flex items-center gap-1.5 font-semibold"><Cpu size={12} /> Home Assistant</div>

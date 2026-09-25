@@ -71,7 +71,7 @@ export default function SolInvictus() {
 
       <div className="flex items-center justify-between gap-3 flex-wrap">
         <div className="flex items-center gap-1 p-1 rounded-full glass" data-testid="sol-tabs">
-          {TABS.map(({ k, l, I }) => <button key={k} onClick={() => setTab(k)} className={`chip !py-2 ${tab === k ? "chip-active" : "!bg-transparent !border-transparent"}`} data-testid={`tab-${k}`}><I size={14} /> {l}</button>)}
+          {TABS.map(({ k, l, I }) => <button key={k} onClick={() => setTab(k)} className={`chip !py-2 ${tab === k ? "chip-active" : "!bg-transparent !border-transparent"}`} data-testid={`tab-${k}`} title={l}><I size={14} /> <span className={tab === k ? "" : "hidden sm:inline"}>{l}</span></button>)}
         </div>
         <div className="flex items-center gap-2 flex-wrap">
           {discovered.length > 0 && <button data-testid="open-unassigned-btn" onClick={() => setUnassOpen(true)} className="chip btn-acc"><Zap size={13} /> {discovered.length} nuovi rilevati</button>}
