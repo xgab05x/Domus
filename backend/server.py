@@ -1,4 +1,4 @@
-from fastapi import FastAPI, APIRouter, HTTPException, UploadFile, File, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, APIRouter, HTTPException, UploadFile, File, WebSocket, WebSocketDisconnect, Request
 from fastapi.responses import FileResponse, Response, StreamingResponse
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
@@ -6,6 +6,10 @@ import json as _json
 import ha_client as hac
 import backup as bk
 import pin as pinlib
+import logs as lg
+import autom as au
+import sounds as snd
+import contextvars
 from motor.motor_asyncio import AsyncIOMotorClient
 import os
 import asyncio
@@ -19,7 +23,7 @@ from urllib.parse import urlparse
 from pydantic import BaseModel, Field, ConfigDict
 from typing import List, Optional, Literal, Any, Dict
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 import httpx
 
 ROOT_DIR = Path(__file__).parent
@@ -166,6 +170,13 @@ class NotifyBody(BaseModel):
 class PTZBody(BaseModel):
     direction: Optional[str] = None
     preset: Optional[str] = None
+
+
+class DeviceBeat(BaseModel):
+    device_id: str = ""
+    name: Optional[str] = None
+    page: Optional[str] = None
+    agent: Optional[str] = None
 
 
 class PinBody(BaseModel):
@@ -483,6 +494,15 @@ class Settings(BaseModel):
     pin_locked_until: Optional[str] = None
     pin_set: bool = False
     alarm_code_set: bool = False
+    intercom_popup: bool = True
+    intercom_sound: str = "ding_dong"
+    intercom_volume: int = 70
+    intercom_duration: int = 15
+    alarm_popup: bool = True
+    alarm_sound: str = "siren_classic"
+    alarm_volume: int = 85
+    alarm_duration: int = 30
+    custom_sounds: List[Dict[str, Any]] = Field(default_factory=list)
     weather_override: str = "auto"
     color_presets: List[Dict[str, Any]] = Field(default_factory=lambda: list(DEFAULT_COLOR_PRESETS))
     climate_presets: Dict[str, float] = Field(default_factory=lambda: dict(DEFAULT_CLIMATE_PRESETS))
@@ -519,6 +539,14 @@ class SettingsUpdate(BaseModel):
     pin_enabled: Optional[bool] = None
     pin_protect_disarm: Optional[bool] = None
     pin_protect_sensitive: Optional[bool] = None
+    intercom_popup: Optional[bool] = None
+    intercom_sound: Optional[str] = None
+    intercom_volume: Optional[int] = None
+    intercom_duration: Optional[int] = None
+    alarm_popup: Optional[bool] = None
+    alarm_sound: Optional[str] = None
+    alarm_volume: Optional[int] = None
+    alarm_duration: Optional[int] = None
     weather_override: Optional[str] = None
     _pin_marker: bool = False
     color_presets: Optional[List[Dict[str, Any]]] = None
@@ -600,14 +628,21 @@ async def push_to_ha(entity: Dict[str, Any], patch: Dict[str, Any]):
         await push_notification("error", f"Comando non inviato a {entity.get('name')}", f"Home Assistant ha risposto: {str(exc)[:140]}", entity.get("id"))
 
 
-async def apply_state(entity_id: str, patch: Dict[str, Any], propagate: bool = True) -> List[Dict[str, Any]]:
+async def apply_state(entity_id: str, patch: Dict[str, Any], propagate: bool = True, source: Optional[Dict[str, Any]] = None) -> List[Dict[str, Any]]:
     """Merge a state patch into an entity and mirror sync keys to linked group members."""
     current = await db.entities.find_one({"id": entity_id}, NOID)
     if not current:
         raise HTTPException(404, "Entity not found")
-    current["state"] = {**(current.get("state") or {}), **patch}
+    prev = dict(current.get("state") or {})
+    current["state"] = {**prev, **patch}
     await db.entities.update_one({"id": entity_id}, {"$set": {"state": current["state"]}})
     await push_to_ha(current, patch)
+    logged = {k: v for k, v in patch.items() if k in LOG_STATE_KEYS and prev.get(k) != v}
+    if logged:
+        await lg.add(db, "entity", f"{current['name']}: {lg.describe(logged)}", device=source or CURRENT_DEVICE.get(),
+                     entity_id=entity_id, entity_name=current["name"],
+                     before={k: prev.get(k) for k in logged}, after=logged)
+    asyncio.create_task(au.fire("state", {"entity_id": entity_id, "entity": current, "patch": patch, "before": prev}))
     affected = [current]
     if not propagate:
         return affected
@@ -1577,13 +1612,68 @@ async def activate_scene(scene_id: str, payload: PinBody | None = None):
         raise HTTPException(404, "Scene not found")
     if any(sensitive_keys(a.get("state") or {}) for a in s.get("actions", [])):
         await require_pin(await get_settings_doc(), (payload or PinBody()).pin, "sensitive")
+    return await do_activate_scene(scene_id, s)
+
+
+async def do_activate_scene(scene_id: str, scene: Optional[Dict[str, Any]] = None):
+    """Esegue una scena: azioni semplici (stato entità) e azioni avanzate (servizi, media, suoni, impulsi)."""
+    s = scene or await db.scenes.find_one({"id": scene_id}, NOID)
+    if not s:
+        raise HTTPException(404, "Scene not found")
     affected: List[Dict[str, Any]] = []
     for a in s.get("actions", []):
         try:
-            affected += await apply_state(a["entity_id"], a.get("state", {}))
+            if a.get("type") and a.get("type") != "entity":
+                await au.run_action(a, {"scene_id": scene_id})
+            else:
+                affected += await apply_state(a["entity_id"], a.get("state", {}))
         except HTTPException:
             continue
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("scene action failed: %s", exc)
     return {"ok": True, "affected": dedupe(affected)}
+
+
+# ---------- Routes: Automazioni (se questo → allora quello) ----------
+@api_router.get("/automations")
+async def list_automations(entity_id: str = ""):
+    q = {"triggers.entity_id": entity_id} if entity_id else {}
+    return await db.automations.find(q, NOID).sort("created", 1).to_list(300)
+
+
+@api_router.post("/automations")
+async def create_automation(payload: Dict[str, Any]):
+    doc = au.new_doc(payload)
+    await db.automations.insert_one(dict(doc))
+    return doc
+
+
+@api_router.patch("/automations/{aid}")
+async def update_automation(aid: str, payload: Dict[str, Any]):
+    upd = {k: v for k, v in payload.items() if k in ("name", "enabled", "icon", "match", "triggers", "conditions", "actions", "owner")}
+    if not upd:
+        raise HTTPException(400, "Nessuna modifica")
+    res = await db.automations.update_one({"id": aid}, {"$set": upd})
+    if res.matched_count == 0:
+        raise HTTPException(404, "Automazione non trovata")
+    return await db.automations.find_one({"id": aid}, NOID)
+
+
+@api_router.delete("/automations/{aid}")
+async def delete_automation(aid: str):
+    res = await db.automations.delete_one({"id": aid})
+    if res.deleted_count == 0:
+        raise HTTPException(404, "Automazione non trovata")
+    return {"ok": True}
+
+
+@api_router.post("/automations/{aid}/run")
+async def run_automation(aid: str):
+    a = await db.automations.find_one({"id": aid}, NOID)
+    if not a:
+        raise HTTPException(404, "Automazione non trovata")
+    done = await au.run(a, {"manual": True})
+    return {"ok": True, "done": done}
 
 
 # ---------- Routes: Climate ----------
@@ -1746,6 +1836,144 @@ async def update_settings(payload: SettingsUpdate):
 
 
 # ---------- Routes: Events ----------
+# ---------- Routes: registro attività e interfacce Domus ----------
+LOG_STATE_KEYS = ("on", "brightness", "rgb", "color_temp", "effect", "privacy", "siren", "locked", "recording",
+                  "night_vision", "motion_detection", "target_temp", "mode", "enabled", "muted", "power")
+
+
+@api_router.get("/logs")
+async def get_logs(kind: str = "", entity_id: str = "", device_id: str = "", search: str = "", since: str = "", limit: int = 200):
+    rows = await lg.query(db, kind=kind, entity_id=entity_id, device_id=device_id, search=search, since=since, limit=limit)
+    return {"items": rows, "kinds": {k: lg.LABELS[k] for k in lg.KINDS}}
+
+
+@api_router.get("/logs/export")
+async def export_logs(kind: str = "", entity_id: str = "", device_id: str = "", search: str = "", since: str = ""):
+    rows = await lg.query(db, kind=kind, entity_id=entity_id, device_id=device_id, search=search, since=since, limit=1000)
+    stamp = datetime.now().strftime("%Y%m%d-%H%M")
+    return Response(content=lg.to_csv(rows), media_type="text/csv; charset=utf-8",
+                    headers={"Content-Disposition": f'attachment; filename="domus-log-{stamp}.csv"'})
+
+
+@api_router.delete("/logs")
+async def clear_logs(payload: PinBody | None = None):
+    await require_pin(await get_settings_doc(), (payload or PinBody()).pin, "config")
+    res = await db.logs.delete_many({})
+    await lg.add(db, "system", "Registro attività svuotato", device=CURRENT_DEVICE.get(), level="warning")
+    return {"deleted": res.deleted_count}
+
+
+@api_router.post("/devices/heartbeat")
+async def device_heartbeat(payload: DeviceBeat):
+    known = await db.devices.find_one({"id": payload.device_id}, NOID)
+    doc = {"id": payload.device_id, "name": payload.name or (known or {}).get("name") or "Interfaccia Domus",
+           "page": payload.page or "", "agent": payload.agent or "", "last_seen": now_iso(),
+           "first_seen": (known or {}).get("first_seen") or now_iso()}
+    await db.devices.update_one({"id": payload.device_id}, {"$set": doc}, upsert=True)
+    if not known:
+        await lg.add(db, "system", f"Nuova interfaccia Domus collegata: {doc['name']}", device={"id": doc["id"], "name": doc["name"]})
+    return doc
+
+
+@api_router.get("/devices")
+async def list_devices():
+    items = await db.devices.find({}, NOID).sort("last_seen", -1).to_list(100)
+    cutoff = (datetime.now(timezone.utc) - timedelta(seconds=100)).isoformat()
+    return [{**d, "online": (d.get("last_seen") or "") > cutoff} for d in items]
+
+
+@api_router.patch("/devices/{device_id}")
+async def rename_device(device_id: str, payload: DeviceBeat):
+    if not payload.name:
+        raise HTTPException(400, "Nome richiesto")
+    await db.devices.update_one({"id": device_id}, {"$set": {"name": payload.name}})
+    doc = await db.devices.find_one({"id": device_id}, NOID)
+    if not doc:
+        raise HTTPException(404, "Interfaccia non trovata")
+    return doc
+
+
+@api_router.delete("/devices/{device_id}")
+async def delete_device(device_id: str):
+    await db.devices.delete_one({"id": device_id})
+    return {"ok": True}
+
+
+
+# ---------- Routes: suonerie personalizzate e griglie telecamere ----------
+@api_router.post("/sounds/upload")
+async def upload_custom_sound(file: UploadFile = File(...)):
+    raw = await file.read()
+    if len(raw) > 6 * 1024 * 1024:
+        raise HTTPException(413, "File troppo grande (max 6 MB)")
+    try:
+        meta = snd.upload_sound(file.filename or "suoneria.mp3", raw)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc))
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("sound upload failed: %s", exc)
+        raise HTTPException(502, f"Caricamento non riuscito: {str(exc)[:140]}")
+    settings = await get_settings_doc()
+    items = [s for s in (settings.get("custom_sounds") or []) if s.get("id") != meta["id"]]
+    items.append({**meta, "url": f"/api/sounds/{meta['id']}"})
+    await db.settings.update_one({"id": "singleton"}, {"$set": {"custom_sounds": items}}, upsert=True)
+    await lg.add(db, "editor", f"Suoneria personalizzata caricata: {meta['name']}", device=CURRENT_DEVICE.get())
+    return {"sound": items[-1], "custom_sounds": items}
+
+
+@api_router.get("/sounds/{sound_id}")
+async def get_custom_sound(sound_id: str):
+    settings = await get_settings_doc()
+    item = next((s for s in (settings.get("custom_sounds") or []) if s.get("id") == sound_id), None)
+    if not item:
+        raise HTTPException(404, "Suoneria non trovata")
+    try:
+        data, ctype = snd.get_object(item["path"])
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(502, f"Audio non disponibile: {str(exc)[:120]}")
+    return Response(content=data, media_type=item.get("content_type") or ctype, headers={"Cache-Control": "public, max-age=86400"})
+
+
+@api_router.delete("/sounds/{sound_id}")
+async def delete_custom_sound(sound_id: str):
+    settings = await get_settings_doc()
+    items = [s for s in (settings.get("custom_sounds") or []) if s.get("id") != sound_id]
+    await db.settings.update_one({"id": "singleton"}, {"$set": {"custom_sounds": items}}, upsert=True)
+    return {"custom_sounds": items}
+
+
+@api_router.get("/grids")
+async def list_grids():
+    return await db.grids.find({}, NOID).sort("created", 1).to_list(100)
+
+
+@api_router.post("/grids")
+async def create_grid(payload: Dict[str, Any]):
+    doc = {"id": str(uuid.uuid4()), "name": payload.get("name") or "Nuova griglia", "layout": payload.get("layout") or "2x2",
+           "slots": payload.get("slots") or [], "rotate": int(payload.get("rotate") or 0), "created": now_iso()}
+    await db.grids.insert_one(dict(doc))
+    return doc
+
+
+@api_router.patch("/grids/{gid}")
+async def update_grid(gid: str, payload: Dict[str, Any]):
+    upd = {k: v for k, v in payload.items() if k in ("name", "layout", "slots", "rotate")}
+    if not upd:
+        raise HTTPException(400, "Nessuna modifica")
+    res = await db.grids.update_one({"id": gid}, {"$set": upd})
+    if res.matched_count == 0:
+        raise HTTPException(404, "Griglia non trovata")
+    return await db.grids.find_one({"id": gid}, NOID)
+
+
+@api_router.delete("/grids/{gid}")
+async def delete_grid(gid: str):
+    res = await db.grids.delete_one({"id": gid})
+    if res.deleted_count == 0:
+        raise HTTPException(404, "Griglia non trovata")
+    return {"ok": True}
+
+
 @api_router.get("/events", response_model=List[SecurityEvent])
 async def list_events(limit: int = 50):
     return await db.events.find({}, NOID).sort("timestamp", -1).to_list(limit)
@@ -1767,6 +1995,8 @@ async def intercom_ring(entity_id: str):
     await push_notification("warning", f"{e['name']}: qualcuno sta suonando", "", entity_id)
     doc = await db.entities.find_one({"id": entity_id}, NOID)
     await broadcast({"type": "entities", "affected": [doc]})
+    await broadcast({"type": "ring", "entity_id": entity_id, "name": e["name"]})
+    asyncio.create_task(au.fire("ring", {"entity_id": entity_id, "entity": doc}))
     return {"ok": True}
 
 
@@ -1777,6 +2007,8 @@ async def intercom_answer(entity_id: str, action: str = "hangup", payload: PinBo
     if action == "unlock":
         await require_pin(await get_settings_doc(), (payload or PinBody()).pin, "sensitive")
         upd["state.locked"] = False
+        await lg.add(db, "security", f"Apertura porta da {e['name']}", device=CURRENT_DEVICE.get(), entity_id=entity_id,
+                     entity_name=e["name"], after="aperta", level="warning", pin_used=True)
         if ha.connected and (e.get("controls") or {}).get("unlock"):
             try:
                 await ha.call_service("lock", "unlock", {"entity_id": e["controls"]["unlock"]})
@@ -1877,8 +2109,13 @@ async def set_alarm(mode: str, payload: PinBody | None = None):
     await db.settings.update_one({"id": "singleton"}, {"$set": upd}, upsert=True)
     label = ALARM_MODE_LABEL.get(mode, mode)
     await db.events.insert_one(SecurityEvent(source="Antintrusione", message=label, level="info" if mode == "disarmed" else "warning").model_dump())
+    await lg.add(db, "alarm", label, device=CURRENT_DEVICE.get(), entity_id=panel_eid or "alarm", entity_name="Antintrusione",
+                 before=settings.get("alarm_armed"), after=mode, level="info" if mode == "disarmed" else "warning",
+                 pin_used=mode == "disarmed" and pinlib.required_for(settings, "disarm"),
+                 detail=f"pannello HA: {panel_eid}" if (panel_eid and ha.connected) else "solo stato interno Domus")
     doc = await get_settings_doc()
     await broadcast({"type": "settings", "settings": public_settings(doc)})
+    asyncio.create_task(au.fire("alarm", {"mode": mode, "ha_state": upd.get("alarm_ha_state") or ""}))
     return {"mode": mode, "ha": bool(panel_eid) and ha.connected}
 
 
@@ -1906,6 +2143,7 @@ async def pin_change(payload: PinChange):
     settings = await get_settings_doc()
     await pinlib.change(db, settings, payload.current_pin, payload.new_pin)
     await push_notification("info", "PIN aggiornato", "Il PIN di sicurezza è stato modificato")
+    await lg.add(db, "security", "PIN di sicurezza modificato", device=CURRENT_DEVICE.get(), level="warning", pin_used=True)
     return pinlib.status(await get_settings_doc())
 
 
@@ -1985,11 +2223,19 @@ async def sync_alarm_from_ha(eid: str, new: Dict[str, Any], settings: Dict[str, 
         upd["alarm_armed"] = mode
         await db.events.insert_one(SecurityEvent(source="Antintrusione", message=f"{ALARM_MODE_LABEL.get(mode, mode)} · da Home Assistant",
                                                  level="info" if mode == "disarmed" else "warning").model_dump())
+        await lg.add(db, "alarm", f"{ALARM_MODE_LABEL.get(mode, mode)} · dal pannello reale", device=HA_DEVICE,
+                     entity_id=eid, entity_name="Antintrusione", before=settings.get("alarm_armed"), after=mode,
+                     level="info" if mode == "disarmed" else "warning")
     if raw == "triggered" and settings.get("alarm_ha_state") != "triggered":
         await db.events.insert_one(SecurityEvent(source="Antintrusione", message="ALLARME! Pannello in stato triggered", level="alert").model_dump())
         await push_notification("error", "ALLARME INTRUSIONE", "Il pannello antintrusione di Home Assistant è in allarme")
+        await lg.add(db, "alarm", "ALLARME INTRUSIONE: pannello in stato triggered", device=HA_DEVICE, entity_id=eid,
+                     entity_name="Antintrusione", after="triggered", level="alert")
     await db.settings.update_one({"id": "singleton"}, {"$set": upd}, upsert=True)
     await broadcast({"type": "settings", "settings": public_settings(await get_settings_doc())})
+    if raw == "triggered" and settings.get("alarm_ha_state") != "triggered":
+        await broadcast({"type": "alarm", "state": "triggered", "zone": new.get("attributes", {}).get("changed_by") or ""})
+    asyncio.create_task(au.fire("alarm", {"mode": mode or settings.get("alarm_armed"), "ha_state": raw}))
 
 
 async def _clear_flag(entity_id: str, key: str, delay: float):
@@ -2017,6 +2263,9 @@ async def ha_event(data: Dict[str, Any]):
         upd = {"state": {**(ent.get("state") or {}), **patch}, "available": new.get("state") != "unavailable", "last_seen": now_iso()}
         await db.entities.update_one({"id": ent["id"]}, {"$set": upd})
         affected.append({**ent, **upd})
+        changed = {k: v for k, v in patch.items() if (ent.get("state") or {}).get(k) != v}
+        if changed:
+            asyncio.create_task(au.fire("state", {"entity_id": ent["id"], "entity": {**ent, **upd}, "patch": changed, "before": ent.get("state") or {}}))
         if ent["type"] == "alarm_zone" and patch.get("triggered") and not (ent.get("state") or {}).get("triggered"):
             await db.events.insert_one(SecurityEvent(source=ent["name"], message="Zona attivata", level="warning").model_dump())
     parents = await db.entities.find({"$or": [{f"controls.{k}": eid} for k in ("privacy", "night_vision", "motion_detection", "siren", "led", "flip", "ptz_preset", "chime", "unlock", "ring", "motion", "battery", "signal", "power_w", "energy_kwh", "voltage_v", "current_a")]}, NOID).to_list(50)
@@ -2038,6 +2287,8 @@ async def ha_event(data: Dict[str, Any]):
                 await db.events.insert_one(SecurityEvent(source=p["name"], message="Campanello suonato", level="warning").model_dump())
                 await push_notification("warning", f"{p['name']}: qualcuno sta suonando", "", p["id"])
                 asyncio.create_task(_clear_flag(p["id"], "ringing", 40))
+                asyncio.create_task(au.fire("ring", {"entity_id": p["id"], "entity": p}))
+                await broadcast({"type": "ring", "entity_id": p["id"], "name": p["name"]})
         elif key == "motion":
             val = s == "on"
             if val:
@@ -2311,6 +2562,8 @@ async def cast_to_screen(entity_id: str, payload: CastBody):
              "media_artist": "Domus Cast", "media_duration": 0, "media_position": 0}
     await db.entities.update_one({"id": entity_id}, {"$set": {"state": state}})
     await db.events.insert_one(SecurityEvent(source=target["name"], message=f"Cast avviato: {label}", level="info").model_dump())
+    await lg.add(db, "cast", f"Trasmissione avviata su {target['name']}: {label}", device=CURRENT_DEVICE.get(),
+                 entity_id=entity_id, entity_name=target["name"], after={"kind": payload.kind, "label": label, "url": payload.url})
     doc = await db.entities.find_one({"id": entity_id}, NOID)
     await broadcast({"type": "entities", "affected": [doc]})
     return {"entity": doc, "demo": bool(cast.get("demo"))}
@@ -2572,6 +2825,43 @@ app.include_router(api_router)
 
 CORS_ORIGINS = [o.strip() for o in os.environ.get('CORS_ORIGINS', '*').split(',') if o.strip()]
 
+CURRENT_DEVICE: contextvars.ContextVar = contextvars.ContextVar("domus_device", default={})
+HA_DEVICE = {"id": "home-assistant", "name": "Home Assistant"}
+AUDIT_SKIP = ("/api/logs", "/api/devices", "/api/ha/check", "/api/notifications", "/api/app-data", "/api/pin/verify",
+              "/api/cameras", "/api/media/tts", "/api/events", "/api/discovered/mock")
+AUDIT_LABEL = {"rooms": "Stanza", "entities": "Dispositivo", "groups": "Gruppo", "scenes": "Scena", "thermostats": "Termostato",
+               "zones": "Zona clima", "meters": "Contatore", "charts": "Grafico", "views": "Vista", "settings": "Impostazioni",
+               "backups": "Backup", "ha": "Home Assistant", "automations": "Automazione", "grids": "Griglia telecamere"}
+AUDIT_ACTION = {"POST": "creata/eseguita", "PATCH": "modificata", "PUT": "modificata", "DELETE": "eliminata"}
+
+
+@app.middleware("http")
+async def domus_device_middleware(request: Request, call_next):
+    """Traccia l'interfaccia Domus che invia il comando e registra le modifiche degli editor."""
+    CURRENT_DEVICE.set({"id": request.headers.get("X-Domus-Device-Id", ""), "name": request.headers.get("X-Domus-Device-Name", "")})
+    path, method = request.url.path, request.method
+    audit = method in ("POST", "PATCH", "PUT", "DELETE") and path.startswith("/api/") and not path.startswith(AUDIT_SKIP)
+    body = b""
+    if audit:
+        body = await request.body()
+    response = await call_next(request)
+    if audit and response.status_code < 400:
+        segs = [s for s in path.split("/") if s][1:]
+        label = AUDIT_LABEL.get(segs[0] if segs else "", "")
+        if label and not (segs[0] == "entities" and method == "PATCH"):
+            payload = None
+            if body:
+                try:
+                    payload = {k: v for k, v in _json.loads(body.decode()).items() if k != "pin"}
+                except Exception:  # noqa: BLE001
+                    payload = None
+            name = (payload or {}).get("name") if isinstance(payload, dict) else None
+            action = "attivata" if path.endswith("/activate") else AUDIT_ACTION.get(method, method)
+            await lg.add(db, "editor", f"{label} {action}{f': {name}' if name else ''}", device=CURRENT_DEVICE.get(),
+                         after=payload, detail=f"{method} {path}")
+    return response
+
+
 app.add_middleware(
     CORSMiddleware,
     allow_credentials="*" not in CORS_ORIGINS,
@@ -2581,8 +2871,36 @@ app.add_middleware(
 )
 
 
+async def automation_set_alarm(mode: str, pin: Optional[str] = None):
+    return await set_alarm(mode, PinBody(pin=pin))
+
+
+async def automation_media(action: Dict[str, Any]) -> str:
+    """Azione media di un'automazione: annuncio vocale, notifica su TV o comando al player."""
+    kind = action.get("media") or "tts"
+    ids = [action["entity_id"]] if action.get("entity_id") else (action.get("ids") or [])
+    if kind == "tts":
+        await media_tts(TTSBody(message=action.get("message") or "", ids=ids, volume=action.get("volume")))
+        return "annuncio vocale inviato"
+    if kind == "notify":
+        await media_notify(NotifyBody(message=action.get("message") or "", title=action.get("title") or "Domus", ids=ids))
+        return "notifica su schermo inviata"
+    if kind == "command" and ids:
+        await media_command(ids[0], MediaCommand(command=action.get("command") or "play", value=action.get("value")))
+        return f"comando media {action.get('command')}"
+    if kind == "cast" and ids:
+        await cast_to_screen(ids[0], CastBody(kind=action.get("cast_kind") or "camera", camera_id=action.get("camera_id"),
+                                              url=action.get("url"), label=action.get("label")))
+        return "trasmissione avviata"
+    return "azione media non riconosciuta"
+
+
 @app.on_event("startup")
 async def on_startup():
+    au.setup(db=db, apply_state=apply_state, activate_scene=do_activate_scene, ha_call=ha.call_service,
+             broadcast=broadcast, notify=push_notification, set_alarm=automation_set_alarm,
+             media_action=automation_media, log=lambda kind, msg, **kw: lg.add(db, kind, msg, **kw))
+    asyncio.create_task(au.time_ticker())
     await db.readings.create_index([("entity_id", 1), ("ts", 1)])
     await db.readings.create_index([("ts", 1)])
     await db.entities.create_index([("ha_entity_id", 1)])

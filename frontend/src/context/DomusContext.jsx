@@ -3,6 +3,11 @@ import { toast } from "sonner";
 import { AppAPI, RoomsAPI, EntitiesAPI, DiscoveredAPI, SettingsAPI, EventsAPI, GroupsAPI, ScenesAPI, ClimateAPI, MetersAPI, ChartsAPI, EnergyAPI, NotificationsAPI, ViewsAPI, MediaAPI, AlarmAPI, CastAPI, API } from "@/lib/api";
 import { computePhase } from "@/lib/solar";
 import PinDialog from "@/components/PinDialog";
+import IntercomPopup from "@/components/IntercomPopup";
+import AlarmPopup from "@/components/AlarmPopup";
+import { playSound, stopSound } from "@/lib/sounds";
+import { DevicesAPI } from "@/lib/api";
+import { deviceId, deviceName } from "@/lib/device";
 
 const DomusCtx = createContext(null);
 
@@ -32,6 +37,9 @@ export function DomusProvider({ children }) {
   const [now, setNow] = useState(new Date());
   const [loading, setLoading] = useState(true);
   const [pinReq, setPinReq] = useState(null);
+  const [ringAlert, setRingAlert] = useState(null);
+  const [alarmAlert, setAlarmAlert] = useState(null);
+  const settingsRef = useRef(null);
   const seenNotif = useRef(null);
 
   const ingestNotifications = useCallback((list) => {
@@ -66,6 +74,26 @@ export function DomusProvider({ children }) {
     setEntities((prev) => prev.map((e) => map.get(e.id) || e));
   }, []);
 
+  settingsRef.current = settings;
+  const playAlert = useCallback((sound, volume, duration) => {
+    if (localStorage.getItem("domus_mute_alerts") === "1") return;
+    playSound(sound, { volume, duration, custom: settingsRef.current?.custom_sounds || [] });
+  }, []);
+
+  const handleRing = useCallback((m) => {
+    const s = settingsRef.current || {};
+    if (s.intercom_popup === false) return;
+    setRingAlert({ entity_id: m.entity_id, name: m.name, ts: Date.now() });
+    playAlert(s.intercom_sound || "ding_dong", s.intercom_volume ?? 70, s.intercom_duration ?? 15);
+  }, [playAlert]);
+
+  const handleAlarm = useCallback((m) => {
+    const s = settingsRef.current || {};
+    if (m.state !== "triggered" || s.alarm_popup === false) return;
+    setAlarmAlert({ zone: m.zone, entity_id: m.entity_id, ts: Date.now() });
+    playAlert(s.alarm_sound || "siren_classic", s.alarm_volume ?? 85, s.alarm_duration ?? 30);
+  }, [playAlert]);
+
   useEffect(() => {
     let ws, timer, closed = false;
     const connect = () => {
@@ -76,6 +104,9 @@ export function DomusProvider({ children }) {
           if (m.type === "entities") mergeEntities(m.affected);
           else if (m.type === "ha") setHa(m.ha);
           else if (m.type === "settings") setSettings(m.settings);
+          else if (m.type === "ring") handleRing(m);
+          else if (m.type === "alarm") handleAlarm(m);
+          else if (m.type === "sound") playAlert(m.sound, m.volume, m.duration);
           else if (m.type === "refresh") refresh();
         } catch (err) { console.warn("Messaggio websocket ignorato:", err?.message || err); }
       };
@@ -85,6 +116,14 @@ export function DomusProvider({ children }) {
     connect();
     return () => { closed = true; clearTimeout(timer); try { ws?.close(); } catch (err) { console.warn("Chiusura websocket:", err?.message || err); } };
   }, [mergeEntities, refresh]);
+
+  useEffect(() => {
+    const beat = () => DevicesAPI.heartbeat({ device_id: deviceId(), name: deviceName(), page: window.location.pathname, agent: navigator.userAgent.slice(0, 120) })
+      .catch((err) => console.warn("Heartbeat non inviato:", err?.message || err));
+    beat();
+    const t = setInterval(beat, 45000);
+    return () => clearInterval(t);
+  }, []);
 
   useEffect(() => {
     const t = setInterval(() => setNow(new Date()), 60000);
@@ -267,6 +306,7 @@ export function DomusProvider({ children }) {
     markNotificationsRead, clearNotifications, setAvailability,
     createView, updateView, deleteView, mediaCommand,
     askPin, pinNeeded, setAlarmMode, castStart, castStop, updateSettingsSecure,
+    ringAlert, alarmAlert, testRing: handleRing, testAlarm: handleAlarm,
   };
 
   return (
@@ -275,6 +315,8 @@ export function DomusProvider({ children }) {
       <PinDialog open={!!pinReq} reason={pinReq?.reason}
         onCancel={() => { pinReq?.resolve(null); setPinReq(null); }}
         onConfirm={(pin) => { pinReq?.resolve(pin); setPinReq(null); }} />
+      <IntercomPopup alert={ringAlert} onClose={() => { stopSound(); setRingAlert(null); }} />
+      <AlarmPopup alert={alarmAlert} onClose={() => { stopSound(); setAlarmAlert(null); }} />
     </DomusCtx.Provider>
   );
 }

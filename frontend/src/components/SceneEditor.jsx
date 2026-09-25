@@ -6,18 +6,19 @@ import ColorWheel from "@/components/ColorWheel";
 import { useDomus } from "@/context/DomusContext";
 import { iconFor, SCENE_ICONS, SOFT_COLORS } from "@/lib/icons";
 import { rgbToHex } from "@/lib/color";
+import { ActionRow, ACTION_KINDS } from "@/components/AutomationEditor";
 
-const EMPTY = { name: "", icon: "sparkles", color: "#b08e54", room_id: null, actions: {} };
+const EMPTY = { name: "", icon: "sparkles", color: "#b08e54", room_id: null, actions: {}, extra: [] };
 
 export default function SceneEditor({ open, onClose, scene, defaultRoom = null }) {
-  const { entities, rooms, settings, createScene, updateScene, deleteScene } = useDomus();
+  const { entities, rooms, settings, scenes, createScene, updateScene, deleteScene } = useDomus();
   const [form, setForm] = useState(EMPTY);
   const [wheelFor, setWheelFor] = useState(null);
 
   useEffect(() => {
     if (!open) return;
-    if (scene) setForm({ ...scene, actions: Object.fromEntries(scene.actions.map((a) => [a.entity_id, { ...a.state }])) });
-    else setForm({ ...EMPTY, room_id: defaultRoom || null, actions: {} });
+    if (scene) setForm({ ...scene, actions: Object.fromEntries(scene.actions.filter((a) => !a.type || a.type === "entity").map((a) => [a.entity_id, { ...a.state }])), extra: scene.actions.filter((a) => a.type && a.type !== "entity") });
+    else setForm({ ...EMPTY, room_id: defaultRoom || null, actions: {}, extra: [] });
     setWheelFor(null);
   }, [open, scene, defaultRoom]);
 
@@ -38,8 +39,8 @@ export default function SceneEditor({ open, onClose, scene, defaultRoom = null }
 
   const save = async () => {
     if (!form.name.trim()) return toast.error("Inserisci un nome");
-    const actions = Object.entries(form.actions).map(([entity_id, state]) => ({ entity_id, state }));
-    if (!actions.length) return toast.error("Seleziona almeno una luce");
+    const actions = [...Object.entries(form.actions).map(([entity_id, state]) => ({ entity_id, state })), ...(form.extra || [])];
+    if (!actions.length) return toast.error("Seleziona almeno una luce o aggiungi un'azione avanzata");
     const payload = { name: form.name, icon: form.icon, color: form.color, room_id: form.room_id, actions };
     if (scene) await updateScene(scene.id, payload); else await createScene(payload);
     toast.success("Scena salvata"); onClose();
@@ -113,6 +114,24 @@ export default function SceneEditor({ open, onClose, scene, defaultRoom = null }
           );
         })}
         {lights.length === 0 && <div className="text-sm text-muted text-center py-4">Nessuna luce in questo ambito.</div>}
+      </div>
+
+      <div className="mt-5">
+        <div className="flex items-center justify-between gap-2 mb-2 flex-wrap">
+          <div className="label">Azioni avanzate ({(form.extra || []).length})</div>
+          <select className="field !py-1 !text-[11px] !w-44" value="" onChange={(e) => e.target.value && set({ extra: [...(form.extra || []), { type: e.target.value }] })} data-testid="scene-add-advanced">
+            <option value="">+ Aggiungi azione…</option>
+            {ACTION_KINDS.map((a) => <option key={a.v} value={a.v}>{a.l}</option>)}
+          </select>
+        </div>
+        <div className="space-y-1.5">
+          {(form.extra || []).map((a, i) => (
+            <ActionRow key={i} action={a} index={i} entities={entities} scenes={scenes} customSounds={settings?.custom_sounds || []}
+              onChange={(patch) => set({ extra: form.extra.map((r, j) => (j === i ? { ...r, ...patch } : r)) })}
+              onDelete={() => set({ extra: form.extra.filter((_, j) => j !== i) })} />
+          ))}
+          {(form.extra || []).length === 0 && <p className="text-[11px] text-muted">Puoi aggiungere climatizzazione, media, annunci vocali, servizi Home Assistant, impulsi su relè, suonerie e notifiche.</p>}
+        </div>
       </div>
     </Modal>
   );

@@ -86,6 +86,9 @@ def state_from_ha(dtype: str, st: Dict[str, Any]) -> Dict[str, Any]:
             out["rgb"] = list(a["rgb_color"])[:3]
         if a.get("color_temp_kelvin"):
             out["color_temp"] = int(a["color_temp_kelvin"])
+        if a.get("effect_list"):
+            out["effect_list"] = list(a["effect_list"])[:60]
+            out["effect"] = a.get("effect")
         return out
     if dtype in ("plug", "switch"):
         return {"on": s == "on"}
@@ -300,6 +303,8 @@ def services_for_patch(entity: Dict[str, Any], patch: Dict[str, Any]) -> List[Tu
             data["rgb_color"] = list(patch["rgb"])[:3]
         elif "color_temp" in patch:
             data["color_temp_kelvin"] = int(patch["color_temp"])
+        if patch.get("effect"):
+            data["effect"] = patch["effect"]
         if len(data) > 1 or patch.get("on"):
             calls.append(("light", "turn_on", data))
     elif t in ("plug", "switch", "meter") and eid and "on" in patch and dom in ("switch", "input_boolean", "fan", "light"):

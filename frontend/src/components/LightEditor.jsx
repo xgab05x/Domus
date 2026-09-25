@@ -85,6 +85,19 @@ function Body({ entity, onClose }) {
           </div>
         </>
       )}
+
+      {(s.effect_list || []).length > 0 && (
+        <div className="mt-5" data-testid="light-effects">
+          <div className="label mb-1.5">Effetti LED del dispositivo ({s.effect_list.length})</div>
+          <div className="flex gap-1.5 flex-wrap max-h-40 overflow-y-auto pr-1">
+            {s.effect_list.map((fx) => (
+              <button key={fx} onClick={() => updateEntity(entity.id, { state: { effect: fx, on: true } })}
+                className={`chip ${s.effect === fx ? "chip-active" : ""}`} data-testid={`light-effect-${fx.replace(/\W+/g, "-")}`}>{fx}</button>
+            ))}
+          </div>
+          <p className="text-[11px] text-muted mt-1.5">Scene LED integrate (es. Sonoff TX Ultimate) lette direttamente da Home Assistant.</p>
+        </div>
+      )}
     </Modal>
   );
 }

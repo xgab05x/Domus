@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { Plus, Home, Grid3x3, Sun, Lightbulb, Thermometer, Sparkles, Link2, Zap, Tv } from "lucide-react";
+import { Plus, Home, Grid3x3, Sun, Lightbulb, Thermometer, Sparkles, Link2, Zap, Tv, ScrollText } from "lucide-react";
 import { useDomus } from "@/context/DomusContext";
 import DeviceBubble from "@/components/DeviceBubble";
 import GroupBubble from "@/components/GroupBubble";
@@ -10,13 +10,15 @@ import ScenesPanel from "@/components/ScenesPanel";
 import ClimatePanel from "@/components/ClimatePanel";
 import EnergyPanel from "@/components/EnergyPanel";
 import MediaPanel from "@/components/MediaPanel";
+import LogsSection from "@/components/LogsSection";
+import AutomationsPanel from "@/components/AutomationsPanel";
 import BannerArt from "@/components/BannerArt";
 import { BrandLogo } from "@/components/BrandMedia";
 import { PHASE_LABEL } from "@/lib/solar";
 import { iconFor } from "@/lib/icons";
 
 const CONTROLLABLE = new Set(["light", "plug", "switch", "meter", "thermostat", "sensor"]);
-const TABS = [{ k: "devices", l: "Dispositivi", I: Lightbulb }, { k: "climate", l: "Clima", I: Thermometer }, { k: "energy", l: "Consumi", I: Zap }, { k: "media", l: "Media", I: Tv }, { k: "scenes", l: "Scene", I: Sparkles }];
+const TABS = [{ k: "devices", l: "Dispositivi", I: Lightbulb }, { k: "climate", l: "Clima", I: Thermometer }, { k: "energy", l: "Consumi", I: Zap }, { k: "media", l: "Media", I: Tv }, { k: "scenes", l: "Scene", I: Sparkles }, { k: "logs", l: "Log", I: ScrollText }];
 const WEATHER_LABEL = { clear: "sereno", clouds: "nuvoloso", rain: "pioggia", snow: "neve", fog: "nebbia", storm: "temporale" };
 const GREETING = { dawn: "Buongiorno", day: "Buona giornata", sunset: "Buonasera", night: "Buonanotte" };
 
@@ -108,7 +110,19 @@ export default function SolInvictus() {
       {tab === "climate" && <ClimatePanel roomFilter={filter} />}
       {tab === "energy" && <EnergyPanel roomFilter={filter} />}
       {tab === "media" && <MediaPanel roomFilter={filter} />}
-      {tab === "scenes" && <ScenesPanel roomFilter={filter} />}
+      {tab === "scenes" && (
+        <div className="space-y-5">
+          <ScenesPanel roomFilter={filter} />
+          <div className="glass rounded-[28px] p-6"><AutomationsPanel /></div>
+        </div>
+      )}
+      {tab === "logs" && (
+        <div className="glass rounded-[28px] p-6" data-testid="logs-panel">
+          <div className="label text-acc">Registro attività</div>
+          <h3 className="font-display text-lg font-semibold mb-4">Cosa è successo in casa</h3>
+          <LogsSection />
+        </div>
+      )}
 
       <RoomManagerDialog open={roomMgrOpen} onOpenChange={setRoomMgrOpen} />
       <UnassignedDrawer open={unassOpen} onOpenChange={setUnassOpen} />

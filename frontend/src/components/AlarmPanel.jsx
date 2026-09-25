@@ -1,9 +1,12 @@
 import { useState } from "react";
-import { ShieldCheck, ShieldAlert, ShieldOff, Moon, Palmtree, SlidersHorizontal, Lock, Cpu } from "lucide-react";
+import { ShieldCheck, ShieldAlert, ShieldOff, Moon, Palmtree, SlidersHorizontal, Lock, Cpu, ScrollText } from "lucide-react";
 import { useDomus } from "@/context/DomusContext";
 import { toast } from "sonner";
 import SecurityCard from "@/components/SecurityCard";
 import SensorDetail from "@/components/SensorDetail";
+import Modal from "@/components/Modal";
+import LogsSection from "@/components/LogsSection";
+import AutomationsPanel from "@/components/AutomationsPanel";
 import { MODE_META } from "@/components/AlarmSettings";
 
 const ICONS = { disarmed: ShieldOff, home: ShieldCheck, away: ShieldAlert, night: Moon, vacation: Palmtree, custom: SlidersHorizontal };
@@ -20,6 +23,7 @@ export default function AlarmPanel({ zones: zonesProp }) {
   const linked = !!settings?.alarm_entity_id && ha?.connected;
   const [open, setOpen] = useState(null);
   const [busy, setBusy] = useState(null);
+  const [logOpen, setLogOpen] = useState(false);
   const openZone = entities.find((e) => e.id === open);
   const triggered = zones.filter((z) => z.state?.triggered).length;
   const bypassed = zones.filter((z) => z.state?.bypass).length;
@@ -67,7 +71,13 @@ export default function AlarmPanel({ zones: zonesProp }) {
           <Cpu size={10} /> {linked ? `pannello HA · ${settings.alarm_entity_id}` : "pannello HA non collegato"}
         </span>
         {pinNeeded("disarm") && <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full bg-acc-soft text-acc"><Lock size={10} /> PIN per disarmare</span>}
+        <button onClick={() => setLogOpen(true)} className="chip !py-1 ml-auto" data-testid="alarm-open-log"><ScrollText size={11} /> Registro armo/disarmo</button>
       </div>
+
+      <details className="mb-4" data-testid="alarm-automations">
+        <summary className="label cursor-pointer select-none">Azioni quando scatta l'allarme</summary>
+        <div className="mt-2"><AutomationsPanel compact defaults={{ name: "", triggers: [{ type: "alarm", value: "triggered" }], actions: [] }} /></div>
+      </details>
 
       <div className="flex items-center justify-between mb-2">
         <div className="label">Zone ({zones.length})</div>
@@ -78,6 +88,9 @@ export default function AlarmPanel({ zones: zonesProp }) {
         {zones.length === 0 && <div className="text-xs text-muted py-2">Nessuna zona in questa vista.</div>}
       </div>
       <SensorDetail entity={openZone} open={!!openZone} onClose={() => setOpen(null)} />
+      <Modal open={logOpen} onClose={() => setLogOpen(false)} title="Registro antintrusione" subtitle="Armo, disarmo e allarmi, con l'interfaccia che ha dato il comando" icon={<ScrollText size={18} />} width="max-w-3xl" testid="alarm-log-modal">
+        <LogsSection fixedKind="alarm" limit={300} />
+      </Modal>
     </div>
   );
 }

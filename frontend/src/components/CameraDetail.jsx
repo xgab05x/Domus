@@ -1,8 +1,10 @@
 import { useEffect, useState } from "react";
-import { Cctv, EyeOff, Moon, Radar, Siren, Lightbulb, FlipHorizontal2, Video, VideoOff, Camera, Trash2, ChevronUp, ChevronDown, ChevronLeft, ChevronRight, ZoomIn, ZoomOut, Bell, DoorOpen, Volume2, VolumeX, Zap, BatteryMedium, Wifi, Cpu, Download } from "lucide-react";
+import { Cctv, EyeOff, Moon, Radar, Siren, Lightbulb, FlipHorizontal2, Video, VideoOff, Camera, Trash2, ChevronUp, ChevronDown, ChevronLeft, ChevronRight, ZoomIn, ZoomOut, Bell, DoorOpen, Volume2, VolumeX, Zap, BatteryMedium, Wifi, Cpu, Download, Cast } from "lucide-react";
 import { toast } from "sonner";
 import Modal from "@/components/Modal";
 import CameraPlayer from "@/components/CameraPlayer";
+import CastTargets from "@/components/CastTargets";
+import AutomationsPanel from "@/components/AutomationsPanel";
 import IconPicker, { IconButton } from "@/components/IconPicker";
 import { useDomus } from "@/context/DomusContext";
 import { CamerasAPI, IntercomAPI } from "@/lib/api";
@@ -16,6 +18,7 @@ export default function CameraDetail({ cam, bg, open, onClose }) {
   const [name, setName] = useState(cam?.name || "");
   const [picker, setPicker] = useState(false);
   const [snap, setSnap] = useState(null);
+  const [castOpen, setCastOpen] = useState(false);
   useEffect(() => { setName(cam?.name || ""); setSnap(null); }, [cam?.id, cam?.name, open]);
   if (!open || !cam) return null;
 
@@ -87,6 +90,7 @@ export default function CameraDetail({ cam, bg, open, onClose }) {
             )}
             <div className="absolute left-3 bottom-3 flex items-center gap-1.5 z-10">
               <button onClick={snapshot} className="px-3 py-1.5 rounded-full bg-white/20 hover:bg-white/30 backdrop-blur text-white text-xs font-semibold flex items-center gap-1" data-testid="camera-snapshot"><Camera size={13} /> Snapshot</button>
+              <button onClick={() => setCastOpen(true)} className="px-3 py-1.5 rounded-full bg-white/20 hover:bg-white/30 backdrop-blur text-white text-xs font-semibold flex items-center gap-1" data-testid="camera-cast"><Cast size={13} /> Trasmetti</button>
               {snap && <>
                 <a href={snap} download={`${cam.name}.jpg`} className="px-3 py-1.5 rounded-full bg-white/20 hover:bg-white/30 backdrop-blur text-white text-xs font-semibold flex items-center gap-1" data-testid="camera-snapshot-download"><Download size={13} /> Salva</a>
                 <button onClick={() => setSnap(null)} className="px-3 py-1.5 rounded-full bg-white/20 hover:bg-white/30 backdrop-blur text-white text-xs font-semibold" data-testid="camera-snapshot-close">Torna al live</button>
@@ -165,6 +169,13 @@ export default function CameraDetail({ cam, bg, open, onClose }) {
 
           <button onClick={simulate} className="w-full chip justify-center" data-testid="camera-simulate-motion"><Zap size={13} /> Simula movimento</button>
 
+          <div className="pt-1">
+            <div className="label mb-1.5">{isDoorbell || cam.type === "intercom" ? "Quando suonano: azioni e tasti funzione" : "Quando rileva movimento: azioni"}</div>
+            <AutomationsPanel compact entityId={cam.id}
+              defaults={{ owner: cam.id, name: "", triggers: isDoorbell || cam.type === "intercom" ? [{ type: "ring", entity_id: cam.id }] : [{ type: "state", entity_id: cam.id, key: "motion", op: "on" }], actions: [] }} />
+            <p className="text-[11px] text-muted mt-1.5">Queste automazioni compaiono come tasti nella finestra che si apre quando suonano (es. apri cancello con impulso, accendi una luce, attiva una scena).</p>
+          </div>
+
           {history.length > 0 && (
             <div>
               <div className="label mb-1.5">Ultimi eventi</div>
@@ -174,6 +185,8 @@ export default function CameraDetail({ cam, bg, open, onClose }) {
         </div>
       </div>
       <IconPicker open={picker} onClose={() => setPicker(false)} value={cam.icon} onChange={async (icon) => { await updateEntity(cam.id, { icon }); toast.success("Icona aggiornata"); }} title={`Icona per ${cam.name}`} />
+      <CastTargets open={castOpen} onClose={() => setCastOpen(false)} title={`Trasmetti «${cam.name}»`} subtitle="La telecamera viene mostrata sullo schermo scelto"
+        payloadFor={() => ({ kind: "camera", camera_id: cam.id })} />
     </Modal>
   );
 }

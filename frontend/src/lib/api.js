@@ -1,10 +1,50 @@
 import axios from "axios";
+import { deviceId, deviceName } from "@/lib/device";
 
 const BASE = process.env.REACT_APP_BACKEND_URL;
 export const API = `${BASE}/api`;
 
 export const http = axios.create({ baseURL: API, timeout: 15000 });
+http.interceptors.request.use((config) => {
+  config.headers["X-Domus-Device-Id"] = deviceId();
+  config.headers["X-Domus-Device-Name"] = deviceName();
+  return config;
+});
 const d = (p) => p.then((r) => r.data);
+
+export const SoundsAPI = {
+  upload: (file) => { const fd = new FormData(); fd.append("file", file); return d(http.post("/sounds/upload", fd, { headers: { "Content-Type": "multipart/form-data" }, timeout: 120000 })); },
+  remove: (id) => d(http.delete(`/sounds/${id}`)),
+  url: (id) => `${API}/sounds/${id}`,
+};
+
+export const GridsAPI = {
+  list: () => d(http.get("/grids")),
+  create: (body) => d(http.post("/grids", body)),
+  update: (id, body) => d(http.patch(`/grids/${id}`, body)),
+  remove: (id) => d(http.delete(`/grids/${id}`)),
+};
+
+export const AutomationsAPI = {
+  list: (params = {}) => d(http.get("/automations", { params })),
+  create: (body) => d(http.post("/automations", body)),
+  update: (id, body) => d(http.patch(`/automations/${id}`, body)),
+  remove: (id) => d(http.delete(`/automations/${id}`)),
+  run: (id) => d(http.post(`/automations/${id}/run`)),
+};
+
+export const LogsAPI = {
+  list: (params = {}) => d(http.get("/logs", { params })),
+  clear: (pin) => d(http.delete("/logs", { data: { pin: pin || null } })),
+  exportUrl: (params = {}) => `${API}/logs/export?${new URLSearchParams(params).toString()}`,
+};
+
+export const DevicesAPI = {
+  list: () => d(http.get("/devices")),
+  heartbeat: (body) => d(http.post("/devices/heartbeat", body)),
+  rename: (id, name) => d(http.patch(`/devices/${id}`, { name })),
+  remove: (id) => d(http.delete(`/devices/${id}`)),
+};
 
 export const AppAPI = { data: () => d(http.get("/app-data")) };
 export const WeatherAPI = { get: () => d(http.get("/weather")) };
