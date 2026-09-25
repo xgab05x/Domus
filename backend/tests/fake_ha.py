@@ -36,6 +36,7 @@ STATES = {
     "climate.termostato_studio": {"state": "heat", "attributes": {"friendly_name": "Termostato Studio HA", "current_temperature": 19.2, "temperature": 21.0, "hvac_modes": ["heat", "off"]}},
     "sensor.studio_temperatura": {"state": "19.2", "attributes": {"friendly_name": "Studio Temperatura", "device_class": "temperature"}},
     "scene.serata_film": {"state": "unknown", "attributes": {"friendly_name": "Serata Film HA"}},
+    "alarm_control_panel.allarme_casa": {"state": "disarmed", "attributes": {"friendly_name": "Allarme Casa HA", "code_arm_required": False, "code_format": "number", "supported_features": 63, "changed_by": None}},
     "automation.luci_notte": {"state": "on", "attributes": {"friendly_name": "Luci Notte HA"}},
 }
 REG = {
@@ -56,9 +57,10 @@ REG = {
         {"entity_id": "media_player.echo_show_bagno", "device_id": "dev_echo", "platform": "alexa_media", "area_id": "bagno"},
         {"entity_id": "media_player.android_tv_camera", "device_id": "dev_atv", "platform": "androidtv", "area_id": "studio"},
         {"entity_id": "climate.termostato_studio", "device_id": "dev_clima", "platform": "tuya", "area_id": "studio"},
+        {"entity_id": "alarm_control_panel.allarme_casa", "device_id": "dev_alarm", "platform": "manual"},
     ],
     "devices": [{"id": "dev_forno", "area_id": "cucina", "manufacturer": "Sonoff"}, {"id": "dev_faretti"}, {"id": "dev_led"}, {"id": "dev_tapo", "model": "C210"}, {"id": "dev_porta"},
-                {"id": "dev_blink", "model": "Blink Video Doorbell"}, {"id": "dev_echo"}, {"id": "dev_atv"}, {"id": "dev_clima"}],
+                {"id": "dev_blink", "model": "Blink Video Doorbell"}, {"id": "dev_echo"}, {"id": "dev_atv"}, {"id": "dev_clima"}, {"id": "dev_alarm"}],
     "areas": [{"area_id": "cucina", "name": "Cucina"}, {"area_id": "studio", "name": "Studio"}, {"area_id": "garage", "name": "Garage"}, {"area_id": "bagno", "name": "Bagno"}],
 }
 subscribers = set()
@@ -107,6 +109,14 @@ async def states(authorization: str = Header("")):
     auth(authorization); return [state_obj(e) for e in STATES]
 
 
+@app.get("/api/states/{eid}")
+async def state_one(eid: str, authorization: str = Header("")):
+    auth(authorization)
+    if eid not in STATES:
+        raise HTTPException(404, "not found")
+    return state_obj(eid)
+
+
 @app.get("/api/services")
 async def services(authorization: str = Header("")):
     auth(authorization)
@@ -134,7 +144,19 @@ async def call_service(domain: str, service: str, body: dict, authorization: str
             await set_state(eid, "paused" if service == "media_pause" or (service == "media_play_pause" and STATES[eid]["state"] == "playing") else "playing")
         elif service == "set_temperature":
             await set_state(eid, None, {"temperature": body["temperature"]})
+        elif service.startswith("alarm_"):
+            mapping = {"alarm_disarm": "disarmed", "alarm_arm_home": "armed_home", "alarm_arm_away": "armed_away",
+                       "alarm_arm_night": "armed_night", "alarm_arm_vacation": "armed_vacation", "alarm_arm_custom_bypass": "armed_custom_bypass"}
+            if service in mapping:
+                await set_state(eid, mapping[service], {"changed_by": "Domus"})
     return []
+
+
+@app.get("/api/hls/{path:path}")
+async def fake_hls(path: str, authorization: str = Header("")):
+    from fastapi.responses import Response
+    body = "#EXTM3U\n#EXT-X-VERSION:7\n#EXT-X-STREAM-INF:BANDWIDTH=800000\nplaylist.m3u8\n" if path.endswith("master_playlist.m3u8") else "#EXTM3U\n#EXT-X-TARGETDURATION:2\n#EXT-X-ENDLIST\n"
+    return Response(content=body, media_type="application/vnd.apple.mpegurl")
 
 
 @app.get("/api/camera_proxy/{eid}")
@@ -177,6 +199,8 @@ async def websocket(ws: WebSocket):
                 await ws.send_text(json.dumps({"id": mid, "type": "result", "success": True, "result": REG["devices"]}))
             elif t == "config/area_registry/list":
                 await ws.send_text(json.dumps({"id": mid, "type": "result", "success": True, "result": REG["areas"]}))
+            elif t == "camera/stream":
+                await ws.send_text(json.dumps({"id": mid, "type": "result", "success": True, "result": {"url": "/api/hls/faketoken/master_playlist.m3u8"}}))
             elif t == "get_states":
                 await ws.send_text(json.dumps({"id": mid, "type": "result", "success": True, "result": [state_obj(e) for e in STATES]}))
             else:

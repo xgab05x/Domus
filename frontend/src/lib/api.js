@@ -87,10 +87,25 @@ export const EventsAPI = { list: (limit = 30) => d(http.get("/events", { params:
 
 export const IntercomAPI = {
   ring: (id) => d(http.post(`/intercom/${id}/ring`)),
-  answer: (id, action) => d(http.post(`/intercom/${id}/answer`, null, { params: { action } })),
+  answer: (id, action, pin) => d(http.post(`/intercom/${id}/answer`, { pin: pin || null }, { params: { action } })),
 };
 
-export const AlarmAPI = { set: (mode) => d(http.post(`/alarm/set/${mode}`)) };
+export const AlarmAPI = {
+  set: (mode, pin) => d(http.post(`/alarm/set/${mode}`, { pin: pin || null })),
+  state: () => d(http.get("/alarm/state")),
+  panels: () => d(http.get("/alarm/panels")),
+};
+
+export const PinAPI = {
+  status: () => d(http.get("/pin/status")),
+  verify: (pin) => d(http.post("/pin/verify", { pin })),
+  change: (currentPin, newPin) => d(http.post("/pin/change", { current_pin: currentPin || null, new_pin: newPin })),
+};
+
+export const CastAPI = {
+  start: (id, body) => d(http.post(`/cast/${id}`, body)),
+  stop: (id) => d(http.post(`/cast/${id}/stop`)),
+};
 
 export const ViewsAPI = {
   list: () => d(http.get("/views")),
@@ -104,6 +119,8 @@ export const CamerasAPI = {
   simulateMotion: (id) => d(http.post(`/cameras/${id}/simulate-motion`)),
   snapshotUrl: (id, t = 0) => `${API}/cameras/${id}/snapshot?t=${t}`,
   streamUrl: (id) => `${API}/cameras/${id}/stream`,
+  streamInfo: (id) => d(http.post(`/cameras/${id}/stream-url`, null, { timeout: 30000 })),
+  absolute: (path) => `${BASE}${path}`,
 };
 
 export const MediaAPI = {

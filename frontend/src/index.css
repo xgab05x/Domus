@@ -225,6 +225,42 @@ input[type="range"].slider::-moz-range-thumb {
 .fade-in { animation: fadein 500ms ease both; }
 @keyframes fadein { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
 
+/* ---------- Micro-interactions ---------- */
+.press { transition: transform 170ms cubic-bezier(.2,.8,.2,1), background-color 200ms ease, box-shadow 200ms ease; }
+.press:active { transform: scale(0.96); }
+
+.pop-in { animation: pop-in 280ms cubic-bezier(.2,1.25,.3,1) both; }
+@keyframes pop-in { from { opacity: 0; transform: scale(0.9) translateY(4px); } to { opacity: 1; transform: none; } }
+
+.pulse-ring { position: relative; }
+.pulse-ring::after {
+    content: ""; position: absolute; inset: -4px; border-radius: inherit; pointer-events: none;
+    border: 1.5px solid rgb(var(--acc) / 0.55); animation: pulse-ring 2.4s cubic-bezier(.2,.8,.2,1) infinite;
+}
+@keyframes pulse-ring { 0% { opacity: 0.85; transform: scale(0.9); } 70% { opacity: 0; transform: scale(1.2); } 100% { opacity: 0; transform: scale(1.2); } }
+
+.shake { animation: shake 360ms ease both; }
+@keyframes shake { 0%, 100% { transform: translateX(0); } 20% { transform: translateX(-6px); } 45% { transform: translateX(5px); } 70% { transform: translateX(-3px); } }
+
+.glow-on { animation: glow-on 620ms ease-out; }
+@keyframes glow-on { from { box-shadow: 0 0 0 0 rgb(var(--acc) / 0.5); } to { box-shadow: 0 0 0 16px rgb(var(--acc) / 0); } }
+
+.stagger > * { animation: fadein 480ms cubic-bezier(.2,.8,.2,1) both; }
+.stagger > *:nth-child(1) { animation-delay: 20ms; }
+.stagger > *:nth-child(2) { animation-delay: 60ms; }
+.stagger > *:nth-child(3) { animation-delay: 100ms; }
+.stagger > *:nth-child(4) { animation-delay: 140ms; }
+.stagger > *:nth-child(5) { animation-delay: 180ms; }
+.stagger > *:nth-child(6) { animation-delay: 220ms; }
+.stagger > *:nth-child(7) { animation-delay: 260ms; }
+.stagger > *:nth-child(8) { animation-delay: 300ms; }
+.stagger > *:nth-child(n+9) { animation-delay: 340ms; }
+
+@media (prefers-reduced-motion: reduce) {
+    .pop-in, .stagger > *, .fade-in, .glow-on, .shake { animation: none !important; }
+    .pulse-ring::after { animation: none; }
+}
+
 /* Scrollbar */
 ::-webkit-scrollbar { width: 8px; height: 8px; }
 ::-webkit-scrollbar-track { background: transparent; }

@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Tv, Speaker, Play, Pause, SkipBack, SkipForward, Square, Shuffle, Repeat, Megaphone, MessageSquare, Trash2, Cpu, Music2 } from "lucide-react";
+import { Tv, Speaker, Play, Pause, SkipBack, SkipForward, Square, Shuffle, Repeat, Megaphone, MessageSquare, Trash2, Cpu, Music2, Cast } from "lucide-react";
 import { toast } from "sonner";
 import Modal from "@/components/Modal";
 import IconPicker, { IconButton } from "@/components/IconPicker";
@@ -7,12 +7,14 @@ import { useDomus } from "@/context/DomusContext";
 import { MediaAPI } from "@/lib/api";
 import { useDebouncedCommit } from "@/hooks/useDebouncedCommit";
 import { fmtDur, artUrl } from "@/components/MediaCard";
+import CastDialog from "@/components/CastDialog";
 
 // Full media player editor: apps, sources, seek, shuffle/repeat, TTS / on-screen notify, rename/room/icon.
 export default function MediaDetail({ entity, open, onClose }) {
   const { rooms, updateEntity, deleteEntity, mediaCommand, mergeEntities } = useDomus();
   const [name, setName] = useState(entity?.name || "");
   const [picker, setPicker] = useState(false);
+  const [castOpen, setCastOpen] = useState(false);
   const [msg, setMsg] = useState("");
   const [title, setTitle] = useState("Domus");
   useEffect(() => { setName(entity?.name || ""); }, [entity?.id, entity?.name, open]);
@@ -69,6 +71,7 @@ export default function MediaDetail({ entity, open, onClose }) {
             <Ctl onClick={() => cmd("stop")} testid="media-stop"><Square size={14} /></Ctl>
             <Ctl onClick={() => cmd("repeat", s.repeat === "off" ? "all" : s.repeat === "all" ? "one" : "off")} active={s.repeat && s.repeat !== "off"} testid="media-repeat"><Repeat size={15} />{s.repeat === "one" && <span className="text-[9px] font-bold ml-0.5">1</span>}</Ctl>
             <button onClick={() => cmd(s.power ? "turn_off" : "turn_on")} className={`chip ${s.power ? "chip-active" : ""}`} data-testid="media-detail-power">{s.power ? "Spegni" : "Accendi"}</button>
+            {(isTv || s.screen) && <button onClick={() => setCastOpen(true)} className={`chip ${s.cast ? "chip-active" : ""}`} data-testid="media-detail-cast"><Cast size={13} /> {s.cast ? `Trasmette: ${s.cast.label}` : "Trasmetti"}</button>}
           </div>
 
           {(s.app_list || []).length > 0 && (
@@ -133,6 +136,7 @@ export default function MediaDetail({ entity, open, onClose }) {
         </div>
       </div>
       <IconPicker open={picker} onClose={() => setPicker(false)} value={entity.icon} onChange={async (icon) => { await updateEntity(entity.id, { icon }); toast.success("Icona aggiornata"); }} title={`Icona per ${entity.name}`} />
+      <CastDialog target={entity} open={castOpen} onClose={() => setCastOpen(false)} />
     </Modal>
   );
 }

@@ -20,14 +20,19 @@ export default function IntercomWidget({ items: itemsProp }) {
 }
 
 function IntercomCard({ item, idx }) {
-  const { updateEntity, reloadEvents } = useDomus();
+  const { updateEntity, reloadEvents, askPin } = useDomus();
   const [detail, setDetail] = useState(false);
   const s = item.state || {};
   const isDoorbell = item.type === "doorbell";
   const lastKey = isDoorbell ? "last_ring" : "last_call";
 
   const simulateRing = async () => { await IntercomAPI.ring(item.id); await reloadEvents(); toast.info("Qualcuno sta suonando…"); };
-  const unlock = async () => { await IntercomAPI.answer(item.id, "unlock"); await reloadEvents(); toast.success("Porta aperta"); };
+  const unlock = async () => {
+    const { ok, pin } = await askPin("sensitive", `Apri la porta · ${item.name}`);
+    if (!ok) return;
+    try { await IntercomAPI.answer(item.id, "unlock", pin); await reloadEvents(); toast.success("Porta aperta"); }
+    catch (err) { toast.error(err?.response?.data?.detail || "Apertura non riuscita"); }
+  };
   const hangup = async () => { await IntercomAPI.answer(item.id, "hangup"); await reloadEvents(); toast.info("Chiamata terminata"); };
   const mute = async () => { await updateEntity(item.id, { state: { muted: !s.muted } }); };
 

@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Cctv, EyeOff, Moon, Radar, Siren, Lightbulb, FlipHorizontal2, Video, VideoOff, Camera, Trash2, ChevronUp, ChevronDown, ChevronLeft, ChevronRight, ZoomIn, ZoomOut, Bell, DoorOpen, Volume2, VolumeX, Zap, BatteryMedium, Wifi, Cpu, Download } from "lucide-react";
 import { toast } from "sonner";
 import Modal from "@/components/Modal";
+import CameraPlayer from "@/components/CameraPlayer";
 import IconPicker, { IconButton } from "@/components/IconPicker";
 import { useDomus } from "@/context/DomusContext";
 import { CamerasAPI, IntercomAPI } from "@/lib/api";
@@ -11,7 +12,7 @@ const NV = [{ k: "auto", l: "Auto" }, { k: "on", l: "Sempre" }, { k: "off", l: "
 
 // Full camera / video-doorbell control panel: live view, PTZ, privacy, night vision, motion detection, siren, LED, flip, recording, presets.
 export default function CameraDetail({ cam, bg, open, onClose }) {
-  const { rooms, updateEntity, deleteEntity, reloadEvents, ha, events } = useDomus();
+  const { rooms, updateEntity, deleteEntity, reloadEvents, ha, events, askPin } = useDomus();
   const [name, setName] = useState(cam?.name || "");
   const [picker, setPicker] = useState(false);
   const [snap, setSnap] = useState(null);
@@ -21,14 +22,33 @@ export default function CameraDetail({ cam, bg, open, onClose }) {
   const s = cam.state || {};
   const isDoorbell = cam.type === "doorbell";
   const live = ha?.connected && cam.ha_entity_id;
-  const set = (patch, msg) => updateEntity(cam.id, { state: patch }).then(() => msg && toast.success(msg));
+  const set = async (patch, msg) => {
+    const sensitive = ["privacy", "siren", "locked"].some((k) => k in patch);
+    let pin = null;
+    if (sensitive) {
+      const res = await askPin("sensitive", `${patch.privacy !== undefined ? "Modalità privacy" : "Sirena"} · ${cam.name}`);
+      if (!res.ok) return;
+      pin = res.pin;
+    }
+    try { await updateEntity(cam.id, { state: patch, ...(pin ? { pin } : {}) }); if (msg) toast.success(msg); }
+    catch (err) { toast.error(err?.response?.data?.detail || "Comando non riuscito"); }
+  };
   const saveName = async () => { if (name.trim() && name.trim() !== cam.name) { await updateEntity(cam.id, { name: name.trim() }); toast.success("Nome aggiornato"); } };
   const ptz = async (direction) => { await CamerasAPI.ptz(cam.id, { direction }); };
   const preset = async (p) => { await CamerasAPI.ptz(cam.id, { preset: p }); await reloadEvents(); toast.success(`Preset ${p}`); };
   const snapshot = () => { if (live) setSnap(CamerasAPI.snapshotUrl(cam.id, Date.now())); else toast.info("Snapshot reale disponibile con Home Assistant connesso · mostrata l'anteprima demo"); };
   const simulate = async () => { await CamerasAPI.simulateMotion(cam.id); await reloadEvents(); };
   const ring = async () => { await IntercomAPI.ring(cam.id); await reloadEvents(); toast.info("Campanello simulato"); };
-  const answer = async (action) => { await IntercomAPI.answer(cam.id, action); await reloadEvents(); toast.success(action === "unlock" ? "Porta aperta" : "Chiamata chiusa"); };
+  const answer = async (action) => {
+    let pin = null;
+    if (action === "unlock") {
+      const res = await askPin("sensitive", `Apri la porta · ${cam.name}`);
+      if (!res.ok) return;
+      pin = res.pin;
+    }
+    try { await IntercomAPI.answer(cam.id, action, pin); await reloadEvents(); toast.success(action === "unlock" ? "Porta aperta" : "Chiamata chiusa"); }
+    catch (err) { toast.error(err?.response?.data?.detail || "Comando non riuscito"); }
+  };
   const remove = async () => { if (!window.confirm(`Eliminare "${cam.name}"?`)) return; await deleteEntity(cam.id); onClose(); toast.success("Dispositivo eliminato"); };
   const history = events.filter((ev) => ev.source === cam.name).slice(0, 8);
 
@@ -45,19 +65,19 @@ export default function CameraDetail({ cam, bg, open, onClose }) {
               <div className="absolute inset-0 flex flex-col items-center justify-center text-white/80 gap-2 bg-slate-900"><EyeOff size={40} /><div className="text-sm font-semibold">Modalità privacy attiva</div><div className="text-xs opacity-70">L'obiettivo è coperto, nessun flusso video.</div></div>
             ) : (
               <>
-                <img src={snap || (live ? CamerasAPI.streamUrl(cam.id) : bg)} alt={cam.name} className="absolute inset-0 w-full h-full object-cover" style={{ filter: s.night_vision === "on" ? "grayscale(1) brightness(1.1) contrast(1.1)" : "brightness(0.85)" }} onError={(e) => { e.currentTarget.src = live ? CamerasAPI.snapshotUrl(cam.id, 1) : bg; e.currentTarget.onerror = () => { e.currentTarget.src = bg; }; }} />
-                <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-transparent to-black/20" />
+                <CameraPlayer cam={cam} bg={bg} live={!!live} nightVision={s.night_vision} />
+                {snap && <img src={snap} alt="snapshot" className="absolute inset-0 w-full h-full object-cover" data-testid="camera-snap-overlay" />}
+                <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-transparent to-black/20 pointer-events-none" />
               </>
             )}
-            <div className="absolute top-3 left-3 flex items-center gap-2 flex-wrap">
-              <Badge tone={live ? "bg-emerald-500/80" : "bg-black/60"}><span className="w-1.5 h-1.5 rounded-full bg-white animate-pulse" /> {live ? "Live HA" : "Live demo"}</Badge>
+            <div className="absolute top-3 left-3 flex items-center gap-2 flex-wrap z-10">
               {s.recording && <Badge tone="bg-rose-600/80">Rec</Badge>}
               {s.motion && <Badge tone="bg-amber-500/90">Movimento</Badge>}
               {s.night_vision === "on" && <Badge tone="bg-indigo-500/80"><Moon size={10} /> Notte</Badge>}
               {isDoorbell && s.ringing && <Badge tone="bg-[rgb(var(--acc-strong))]"><Bell size={10} /> Sta suonando</Badge>}
             </div>
             {s.ptz && !s.privacy && (
-              <div className="absolute right-3 bottom-3 grid grid-cols-3 gap-1 p-1.5 rounded-2xl bg-black/50 backdrop-blur" data-testid="ptz-pad">
+              <div className="absolute right-3 bottom-3 grid grid-cols-3 gap-1 p-1.5 rounded-2xl bg-black/50 backdrop-blur z-10" data-testid="ptz-pad">
                 <span /><PtzBtn onClick={() => ptz("up")} testid="ptz-up"><ChevronUp size={16} /></PtzBtn><span />
                 <PtzBtn onClick={() => ptz("left")} testid="ptz-left"><ChevronLeft size={16} /></PtzBtn>
                 <PtzBtn onClick={() => ptz("zoom_in")} testid="ptz-zoom-in"><ZoomIn size={14} /></PtzBtn>
@@ -65,9 +85,12 @@ export default function CameraDetail({ cam, bg, open, onClose }) {
                 <span /><PtzBtn onClick={() => ptz("down")} testid="ptz-down"><ChevronDown size={16} /></PtzBtn><PtzBtn onClick={() => ptz("zoom_out")} testid="ptz-zoom-out"><ZoomOut size={14} /></PtzBtn>
               </div>
             )}
-            <div className="absolute left-3 bottom-3 flex items-center gap-1.5">
+            <div className="absolute left-3 bottom-3 flex items-center gap-1.5 z-10">
               <button onClick={snapshot} className="px-3 py-1.5 rounded-full bg-white/20 hover:bg-white/30 backdrop-blur text-white text-xs font-semibold flex items-center gap-1" data-testid="camera-snapshot"><Camera size={13} /> Snapshot</button>
-              {snap && <a href={snap} download={`${cam.name}.jpg`} className="px-3 py-1.5 rounded-full bg-white/20 hover:bg-white/30 backdrop-blur text-white text-xs font-semibold flex items-center gap-1" data-testid="camera-snapshot-download"><Download size={13} /> Salva</a>}
+              {snap && <>
+                <a href={snap} download={`${cam.name}.jpg`} className="px-3 py-1.5 rounded-full bg-white/20 hover:bg-white/30 backdrop-blur text-white text-xs font-semibold flex items-center gap-1" data-testid="camera-snapshot-download"><Download size={13} /> Salva</a>
+                <button onClick={() => setSnap(null)} className="px-3 py-1.5 rounded-full bg-white/20 hover:bg-white/30 backdrop-blur text-white text-xs font-semibold" data-testid="camera-snapshot-close">Torna al live</button>
+              </>}
               <button onClick={() => set({ recording: !s.recording }, s.recording ? "Registrazione fermata" : "Registrazione avviata")} className="px-3 py-1.5 rounded-full bg-white/20 hover:bg-white/30 backdrop-blur text-white text-xs font-semibold flex items-center gap-1" data-testid="camera-record">
                 {s.recording ? <VideoOff size={13} /> : <Video size={13} />} {s.recording ? "Stop rec" : "Registra"}
               </button>

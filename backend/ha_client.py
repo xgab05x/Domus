@@ -21,6 +21,21 @@ CAMERA_CONTROLS = {
     "chime": ("chime", "ding"), "unlock": ("lock", "door"),
 }
 ZONE_ICON = {"motion": "radar", "contact": "door-closed", "glassbreak": "shield-alert", "safety": "siren"}
+ALARM_SERVICE = {"disarmed": "alarm_disarm", "home": "alarm_arm_home", "away": "alarm_arm_away", "night": "alarm_arm_night",
+                 "vacation": "alarm_arm_vacation", "custom": "alarm_arm_custom_bypass"}
+HA_ALARM_MODE = {"disarmed": "disarmed", "armed_home": "home", "armed_away": "away", "armed_night": "night",
+                 "armed_vacation": "vacation", "armed_custom_bypass": "custom"}
+# alarm_control_panel supported_features bitmask (HA core)
+PANEL_FEATURES = [(1, "home"), (2, "away"), (4, "night"), (16, "custom"), (32, "vacation")]
+
+
+def panel_modes(supported_features: Any) -> List[str]:
+    """Modes an HA alarm panel declares as supported (always includes `disarmed`)."""
+    try:
+        bits = int(supported_features)
+    except (TypeError, ValueError):
+        return ["disarmed", "home", "away"]
+    return ["disarmed"] + [name for bit, name in PANEL_FEATURES if bits & bit]
 
 
 def slug(s: str) -> str:
@@ -453,6 +468,10 @@ class HAClient:
             if not m.get("success"):
                 raise RuntimeError(str(m.get("error")))
             return m.get("result")
+
+    async def stream_source(self, entity_id: str, fmt: str = "hls") -> Dict[str, Any]:
+        """Ask HA to publish a live stream for a camera (`camera/stream` → {"url": "/api/hls/<token>/master_playlist.m3u8"})."""
+        return await self.ws_call({"type": "camera/stream", "entity_id": entity_id, "format": fmt}, timeout=20) or {}
 
     async def registries(self) -> Dict[str, Any]:
         out: Dict[str, Any] = {}

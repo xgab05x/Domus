@@ -91,7 +91,7 @@ export default function SolInvictus() {
           {items.length === 0 ? (
             <div className="glass rounded-[28px] p-10 text-center text-muted" data-testid="empty-devices">Nessun dispositivo in questa vista.</div>
           ) : (
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4" data-testid="devices-grid">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 stagger" data-testid="devices-grid">
               {items.map((it) => it.kind === "group"
                 ? <GroupBubble key={`g-${it.g.id}`} group={it.g} onEdit={() => setGroupEditor({ open: true, id: it.g.id })} />
                 : <DeviceBubble key={it.e.id} entity={it.e} />)}

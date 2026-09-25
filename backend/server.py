@@ -5,6 +5,7 @@ from starlette.middleware.cors import CORSMiddleware
 import json as _json
 import ha_client as hac
 import backup as bk
+import pin as pinlib
 from motor.motor_asyncio import AsyncIOMotorClient
 import os
 import asyncio
@@ -112,6 +113,7 @@ class EntityUpdate(BaseModel):
     integration: Optional[str] = None
     state: Optional[Dict[str, Any]] = None
     controls: Optional[Dict[str, Any]] = None
+    pin: Optional[str] = None
 
 
 class View(BaseModel):
@@ -163,6 +165,22 @@ class NotifyBody(BaseModel):
 class PTZBody(BaseModel):
     direction: Optional[str] = None
     preset: Optional[str] = None
+
+
+class PinBody(BaseModel):
+    pin: Optional[str] = None
+
+
+class PinChange(BaseModel):
+    current_pin: Optional[str] = None
+    new_pin: str
+
+
+class CastBody(BaseModel):
+    kind: Literal["camera", "dashboard"] = "camera"
+    camera_id: Optional[str] = None
+    url: Optional[str] = None
+    label: Optional[str] = None
 
 
 class HAConfig(BaseModel):
@@ -450,6 +468,20 @@ class Settings(BaseModel):
     theme_mode: str = "auto"
     home_name: str = "Casa Domus"
     alarm_armed: str = "disarmed"
+    alarm_entity_id: str = ""
+    alarm_modes: List[str] = Field(default_factory=lambda: ["disarmed", "home", "away"])
+    alarm_zone_ids: List[str] = Field(default_factory=list)
+    alarm_use_pin_as_code: bool = True
+    alarm_ha_code: str = ""
+    alarm_ha_state: str = ""
+    pin_enabled: bool = True
+    pin_protect_disarm: bool = True
+    pin_protect_sensitive: bool = True
+    pin_hash: str = ""
+    pin_failed: int = 0
+    pin_locked_until: Optional[str] = None
+    pin_set: bool = False
+    alarm_code_set: bool = False
     weather_override: str = "auto"
     color_presets: List[Dict[str, Any]] = Field(default_factory=lambda: list(DEFAULT_COLOR_PRESETS))
     climate_presets: Dict[str, float] = Field(default_factory=lambda: dict(DEFAULT_CLIMATE_PRESETS))
@@ -477,7 +509,16 @@ class SettingsUpdate(BaseModel):
     theme_mode: Optional[str] = None
     home_name: Optional[str] = None
     alarm_armed: Optional[str] = None
+    alarm_entity_id: Optional[str] = None
+    alarm_modes: Optional[List[str]] = None
+    alarm_zone_ids: Optional[List[str]] = None
+    alarm_use_pin_as_code: Optional[bool] = None
+    alarm_ha_code: Optional[str] = None
+    pin_enabled: Optional[bool] = None
+    pin_protect_disarm: Optional[bool] = None
+    pin_protect_sensitive: Optional[bool] = None
     weather_override: Optional[str] = None
+    _pin_marker: bool = False
     color_presets: Optional[List[Dict[str, Any]]] = None
     climate_presets: Optional[Dict[str, float]] = None
     energy_cost: Optional[Dict[str, Any]] = None
@@ -504,7 +545,21 @@ async def get_settings_doc() -> Dict[str, Any]:
 
 
 def public_settings(doc: Dict[str, Any]) -> Dict[str, Any]:
-    return {**doc, "ha_token": "", "ha_token_set": bool(doc.get("ha_token"))}
+    return {**doc, "ha_token": "", "ha_token_set": bool(doc.get("ha_token")), "pin_hash": "", "alarm_ha_code": "",
+            "pin_set": bool(doc.get("pin_hash")), "alarm_code_set": bool(doc.get("alarm_ha_code"))}
+
+
+async def require_pin(settings: Dict[str, Any], provided: Optional[str], scope: str):
+    """Enforce the household PIN for a protected action (scope: `disarm` or `sensitive`)."""
+    if not pinlib.required_for(settings, scope):
+        return
+    if not provided:
+        raise HTTPException(401, "PIN richiesto")
+    ok, left = await pinlib.check(db, settings, provided)
+    if left:
+        raise HTTPException(429, f"Troppi tentativi errati: riprova tra {left} secondi")
+    if not ok:
+        raise HTTPException(401, "PIN errato")
 
 
 # ---------- Realtime broadcast to browsers ----------
@@ -1377,9 +1432,14 @@ async def create_entity(payload: EntityCreate):
 @api_router.patch("/entities/{entity_id}")
 async def update_entity(entity_id: str, payload: EntityUpdate):
     raw = payload.model_dump(exclude_none=True)
+    provided_pin = raw.pop("pin", None)
     meta = {k: raw[k] for k in ("name", "room_id", "icon", "integration", "controls") if k in raw}
     if not meta and "state" not in raw:
         raise HTTPException(400, "Nothing to update")
+    if "state" in raw:
+        target = await db.entities.find_one({"id": entity_id}, NOID)
+        if target and target.get("type") in ("camera", "doorbell") and any(k in raw["state"] for k in pinlib.SENSITIVE_STATE_KEYS):
+            await require_pin(await get_settings_doc(), provided_pin, "sensitive")
     if meta:
         res = await db.entities.update_one({"id": entity_id}, {"$set": meta})
         if res.matched_count == 0:
@@ -1690,10 +1750,11 @@ async def intercom_ring(entity_id: str):
 
 
 @api_router.post("/intercom/{entity_id}/answer")
-async def intercom_answer(entity_id: str, action: str = "hangup"):
+async def intercom_answer(entity_id: str, action: str = "hangup", payload: PinBody | None = None):
     e = await _get_entity(entity_id, ("intercom", "doorbell"))
     upd: Dict[str, Any] = {"state.ringing": False}
     if action == "unlock":
+        await require_pin(await get_settings_doc(), (payload or PinBody()).pin, "sensitive")
         upd["state.locked"] = False
         if ha.connected and (e.get("controls") or {}).get("unlock"):
             try:
@@ -1716,23 +1777,110 @@ async def intercom_answer(entity_id: str, action: str = "hangup"):
     return {"ok": True}
 
 
+ALARM_MODE_LABEL = {"disarmed": "Sistema disarmato", "home": "Sistema armato (Home)", "away": "Sistema armato (Away)",
+                    "night": "Sistema armato (Notte)", "vacation": "Sistema armato (Vacanza)", "custom": "Sistema armato (Personalizzato)"}
+
+
+async def alarm_panel_snapshot(settings: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    """Live view of the mapped HA alarm_control_panel (None when not mapped or HA offline)."""
+    eid = settings.get("alarm_entity_id") or ""
+    if not (ha.connected and eid):
+        return None
+    try:
+        st = await ha.rest("GET", f"/api/states/{eid}", timeout=8)
+    except Exception as exc:  # noqa: BLE001
+        return {"entity_id": eid, "error": str(exc)[:160]}
+    a = (st or {}).get("attributes") or {}
+    return {"entity_id": eid, "name": a.get("friendly_name") or eid, "state": st.get("state"), "mode": hac.HA_ALARM_MODE.get(st.get("state") or ""),
+            "code_arm_required": a.get("code_arm_required", True), "code_format": a.get("code_format"), "changed_by": a.get("changed_by"),
+            "supported_modes": hac.panel_modes(a.get("supported_features")), "last_changed": st.get("last_changed")}
+
+
+@api_router.get("/alarm/panels")
+async def alarm_panels():
+    if not ha.connected:
+        raise HTTPException(503, "Home Assistant non connesso (modalità demo)")
+    states = await ha.rest("GET", "/api/states", timeout=20)
+    out = []
+    for s in states or []:
+        if not s["entity_id"].startswith("alarm_control_panel."):
+            continue
+        a = s.get("attributes") or {}
+        out.append({"entity_id": s["entity_id"], "name": a.get("friendly_name") or s["entity_id"], "state": s.get("state"),
+                    "code_arm_required": a.get("code_arm_required", True), "supported_modes": hac.panel_modes(a.get("supported_features"))})
+    return out
+
+
+@api_router.get("/alarm/state")
+async def alarm_state():
+    settings = await get_settings_doc()
+    panel = await alarm_panel_snapshot(settings)
+    zone_ids = settings.get("alarm_zone_ids") or []
+    q = {"type": "alarm_zone"} if not zone_ids else {"type": "alarm_zone", "id": {"$in": zone_ids}}
+    zones = await db.entities.find(q, NOID).to_list(500)
+    return {"mode": settings.get("alarm_armed", "disarmed"), "ha_state": settings.get("alarm_ha_state") or (panel or {}).get("state"),
+            "modes": settings.get("alarm_modes") or ["disarmed", "home", "away"], "panel": panel, "zones": zones,
+            "pin": pinlib.status(settings)}
+
+
 @api_router.post("/alarm/set/{mode}")
-async def set_alarm(mode: str):
-    if mode not in ("disarmed", "home", "away"):
+async def set_alarm(mode: str, payload: PinBody | None = None):
+    if mode not in hac.ALARM_SERVICE:
         raise HTTPException(400, "Invalid mode")
-    await db.settings.update_one({"id": "singleton"}, {"$set": {"alarm_armed": mode}}, upsert=True)
-    label = {"disarmed": "Sistema disarmato", "home": "Sistema armato (Home)", "away": "Sistema armato (Away)"}[mode]
-    await db.events.insert_one(SecurityEvent(source="Antintrusione", message=label, level="info" if mode == "disarmed" else "warning").model_dump())
+    settings = await get_settings_doc()
+    if mode == "disarmed":
+        await require_pin(settings, (payload or PinBody()).pin, "disarm")
+    upd: Dict[str, Any] = {"alarm_armed": mode}
+    panel_eid = settings.get("alarm_entity_id") or ""
     if ha.connected:
         try:
-            states = await ha.rest("GET", "/api/states", timeout=10)
-            panel = next((s["entity_id"] for s in states or [] if s["entity_id"].startswith("alarm_control_panel.")), None)
-            if panel:
-                svc = {"disarmed": "alarm_disarm", "home": "alarm_arm_home", "away": "alarm_arm_away"}[mode]
-                await ha.call_service("alarm_control_panel", svc, {"entity_id": panel})
+            if not panel_eid:
+                states = await ha.rest("GET", "/api/states", timeout=10)
+                panel_eid = next((s["entity_id"] for s in states or [] if s["entity_id"].startswith("alarm_control_panel.")), "")
+            if panel_eid:
+                data: Dict[str, Any] = {"entity_id": panel_eid}
+                code = settings.get("alarm_ha_code") or ((payload or PinBody()).pin if settings.get("alarm_use_pin_as_code", True) else "")
+                if code:
+                    data["code"] = code
+                await ha.call_service("alarm_control_panel", hac.ALARM_SERVICE[mode], data)
+                upd["alarm_ha_state"] = ""
         except Exception as exc:  # noqa: BLE001
             logger.warning("HA alarm panel call failed: %s", exc)
-    return {"mode": mode}
+            await push_notification("error", "Pannello allarme HA non raggiungibile", str(exc)[:140])
+            raise HTTPException(502, f"Pannello allarme HA: {str(exc)[:160]}")
+    await db.settings.update_one({"id": "singleton"}, {"$set": upd}, upsert=True)
+    label = ALARM_MODE_LABEL.get(mode, mode)
+    await db.events.insert_one(SecurityEvent(source="Antintrusione", message=label, level="info" if mode == "disarmed" else "warning").model_dump())
+    doc = await get_settings_doc()
+    await broadcast({"type": "settings", "settings": public_settings(doc)})
+    return {"mode": mode, "ha": bool(panel_eid) and ha.connected}
+
+
+# ---------- Routes: household PIN ----------
+@api_router.get("/pin/status")
+async def pin_status():
+    return pinlib.status(await get_settings_doc())
+
+
+@api_router.post("/pin/verify")
+async def pin_verify(payload: PinBody):
+    settings = await get_settings_doc()
+    if not settings.get("pin_hash"):
+        raise HTTPException(400, "Nessun PIN impostato")
+    ok, left = await pinlib.check(db, settings, payload.pin or "")
+    if left:
+        raise HTTPException(429, f"Troppi tentativi errati: riprova tra {left} secondi")
+    if not ok:
+        raise HTTPException(401, "PIN errato")
+    return {"verified": True}
+
+
+@api_router.post("/pin/change")
+async def pin_change(payload: PinChange):
+    settings = await get_settings_doc()
+    await pinlib.change(db, settings, payload.current_pin, payload.new_pin)
+    await push_notification("info", "PIN aggiornato", "Il PIN di sicurezza è stato modificato")
+    return pinlib.status(await get_settings_doc())
 
 
 # ---------- Home Assistant bridge ----------
@@ -1776,8 +1924,46 @@ async def ha_check_and_import(settings: Dict[str, Any]):
     if st["connected"]:
         try:
             await ha_import_entities()
+            await ha_autodetect_panel()
         except Exception as exc:  # noqa: BLE001
             logger.warning("HA import failed: %s", exc)
+
+
+async def ha_autodetect_panel():
+    """Map the first HA alarm_control_panel automatically when the user has not chosen one yet."""
+    settings = await get_settings_doc()
+    if settings.get("alarm_entity_id"):
+        return
+    states = await ha.rest("GET", "/api/states", timeout=15)
+    panel = next((s for s in states or [] if s["entity_id"].startswith("alarm_control_panel.")), None)
+    if not panel:
+        return
+    a = panel.get("attributes") or {}
+    upd = {"alarm_entity_id": panel["entity_id"], "alarm_ha_state": panel.get("state") or "",
+           "alarm_modes": hac.panel_modes(a.get("supported_features"))}
+    mode = hac.HA_ALARM_MODE.get(panel.get("state") or "")
+    if mode:
+        upd["alarm_armed"] = mode
+    await db.settings.update_one({"id": "singleton"}, {"$set": upd}, upsert=True)
+    await push_notification("info", "Pannello antintrusione HA collegato", f"{a.get('friendly_name') or panel['entity_id']}")
+    await broadcast({"type": "settings", "settings": public_settings(await get_settings_doc())})
+
+
+async def sync_alarm_from_ha(eid: str, new: Dict[str, Any], settings: Dict[str, Any]):
+    raw = new.get("state") or ""
+    mode = hac.HA_ALARM_MODE.get(raw)
+    upd: Dict[str, Any] = {"alarm_ha_state": raw}
+    if not settings.get("alarm_entity_id"):
+        upd["alarm_entity_id"] = eid
+    if mode and mode != settings.get("alarm_armed"):
+        upd["alarm_armed"] = mode
+        await db.events.insert_one(SecurityEvent(source="Antintrusione", message=f"{ALARM_MODE_LABEL.get(mode, mode)} · da Home Assistant",
+                                                 level="info" if mode == "disarmed" else "warning").model_dump())
+    if raw == "triggered" and settings.get("alarm_ha_state") != "triggered":
+        await db.events.insert_one(SecurityEvent(source="Antintrusione", message="ALLARME! Pannello in stato triggered", level="alert").model_dump())
+        await push_notification("error", "ALLARME INTRUSIONE", "Il pannello antintrusione di Home Assistant è in allarme")
+    await db.settings.update_one({"id": "singleton"}, {"$set": upd}, upsert=True)
+    await broadcast({"type": "settings", "settings": public_settings(await get_settings_doc())})
 
 
 async def _clear_flag(entity_id: str, key: str, delay: float):
@@ -1792,6 +1978,11 @@ async def ha_event(data: Dict[str, Any]):
     """state_changed handler: update the linked Domus entity (or the parent device that owns this control)."""
     eid, new = data.get("entity_id"), data.get("new_state")
     if not eid or not new:
+        return
+    if eid.startswith("alarm_control_panel."):
+        settings = await get_settings_doc()
+        if (settings.get("alarm_entity_id") or eid) == eid:
+            await sync_alarm_from_ha(eid, new, settings)
         return
     affected: List[Dict[str, Any]] = []
     ent = await db.entities.find_one({"ha_entity_id": eid}, NOID)
@@ -1863,6 +2054,8 @@ async def ha_config(payload: HAConfig):
     ha.configure(doc.get("ha_url"), doc.get("ha_token"), doc.get("ha_enabled"))
     st = await ha.check()
     await broadcast({"type": "ha", "ha": st})
+    if st["connected"]:
+        asyncio.create_task(ha_autodetect_panel())
     return {"settings": public_settings(doc), "ha": st}
 
 
@@ -1871,7 +2064,9 @@ async def ha_import():
     st = await ha.check()
     if not st["connected"]:
         raise HTTPException(503, f"Home Assistant non raggiungibile: {st.get('last_error') or 'modalità demo'}")
-    return await ha_import_entities()
+    res = await ha_import_entities()
+    await ha_autodetect_panel()
+    return res
 
 
 @api_router.get("/ha/states")
@@ -1996,13 +2191,112 @@ async def camera_stream(entity_id: str):
     cam = await _get_entity(entity_id, ("camera", "doorbell"))
     if not (ha.connected and cam.get("ha_entity_id", "").startswith("camera.")):
         raise HTTPException(404, "Stream disponibile solo con Home Assistant connesso")
+    client = httpx.AsyncClient(timeout=None)
+    try:
+        resp = await client.send(client.build_request("GET", f"{ha.url}/api/camera_proxy_stream/{cam['ha_entity_id']}", headers=ha.headers), stream=True)
+    except Exception as exc:  # noqa: BLE001
+        await client.aclose()
+        raise HTTPException(502, f"MJPEG non disponibile: {str(exc)[:140]}")
+    if resp.status_code >= 400:
+        await resp.aclose()
+        await client.aclose()
+        raise HTTPException(502, f"MJPEG non disponibile (HA {resp.status_code})")
 
     async def gen():
-        async with httpx.AsyncClient(timeout=None) as c:
-            async with c.stream("GET", f"{ha.url}/api/camera_proxy_stream/{cam['ha_entity_id']}", headers=ha.headers) as r:
-                async for chunk in r.aiter_bytes():
-                    yield chunk
-    return StreamingResponse(gen(), media_type="multipart/x-mixed-replace;boundary=--frameboundary")
+        try:
+            async for chunk in resp.aiter_bytes():
+                yield chunk
+        finally:
+            await resp.aclose()
+            await client.aclose()
+    return StreamingResponse(gen(), media_type=resp.headers.get("content-type") or "multipart/x-mixed-replace;boundary=--frameboundary")
+
+
+@api_router.post("/cameras/{entity_id}/stream-url")
+async def camera_stream_url(entity_id: str):
+    """Ask HA for a live HLS playlist and return it proxied through Domus (frontend falls back to MJPEG/snapshot)."""
+    cam = await _get_entity(entity_id, ("camera", "doorbell"))
+    eid = cam.get("ha_entity_id") or ""
+    if not (ha.connected and eid.startswith("camera.")):
+        return {"available": False, "reason": "demo", "mjpeg": False}
+    try:
+        res = await ha.stream_source(eid, "hls")
+    except Exception as exc:  # noqa: BLE001
+        return {"available": False, "reason": str(exc)[:200], "mjpeg": True}
+    path = (res or {}).get("url") or ""
+    if "/api/hls/" not in path:
+        return {"available": False, "reason": "HLS non disponibile per questa telecamera", "mjpeg": True}
+    return {"available": True, "format": "hls", "url": f"/api/ha/hls/{path.split('/api/hls/', 1)[1]}", "mjpeg": True}
+
+
+@api_router.get("/ha/hls/{path:path}")
+async def ha_hls(path: str):
+    """Transparent proxy for HA HLS playlists/segments (relative URLs inside the playlist keep working)."""
+    if not ha.connected or ".." in path:
+        raise HTTPException(404, "Stream non disponibile")
+    try:
+        content, ctype = await ha.fetch_bytes(f"/api/hls/{path}", timeout=25)
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(502, f"HLS: {str(exc)[:160]}")
+    if path.endswith(".m3u8"):
+        ctype = "application/vnd.apple.mpegurl"
+    return Response(content=content, media_type=ctype, headers={"Cache-Control": "no-store"})
+
+
+# ---------- Routes: Cast (camera / dashboard su schermi) ----------
+@api_router.post("/cast/{entity_id}")
+async def cast_to_screen(entity_id: str, payload: CastBody):
+    target = await _get_entity(entity_id, ("media_player",))
+    label = payload.label or ""
+    cast: Dict[str, Any] = {"kind": payload.kind, "ts": now_iso()}
+    if payload.kind == "camera":
+        if not payload.camera_id:
+            raise HTTPException(400, "camera_id richiesto")
+        cam = await _get_entity(payload.camera_id, ("camera", "doorbell"))
+        label = label or cam["name"]
+        cast.update({"camera_id": cam["id"], "label": label})
+        if ha.connected and target.get("ha_entity_id") and (cam.get("ha_entity_id") or "").startswith("camera."):
+            try:
+                await ha.call_service("camera", "play_stream", {"entity_id": cam["ha_entity_id"], "media_player": target["ha_entity_id"], "format": "hls"})
+            except Exception as exc:  # noqa: BLE001
+                raise HTTPException(502, f"Cast non riuscito: {str(exc)[:160]}")
+        else:
+            cast["demo"] = True
+    else:
+        if not payload.url:
+            raise HTTPException(400, "url richiesto")
+        label = label or "Dashboard Domus"
+        cast.update({"url": payload.url, "label": label})
+        if ha.connected and target.get("ha_entity_id"):
+            try:
+                await ha.call_service("media_player", "play_media", {"entity_id": target["ha_entity_id"], "media_content_type": "url",
+                                                                     "media_content_id": payload.url, "extra": {"title": label}})
+            except Exception as exc:  # noqa: BLE001
+                raise HTTPException(502, f"Cast non riuscito: {str(exc)[:160]}")
+        else:
+            cast["demo"] = True
+    state = {**(target.get("state") or {}), "cast": cast, "power": True, "status": "playing", "media_title": label,
+             "media_artist": "Domus Cast", "media_duration": 0, "media_position": 0}
+    await db.entities.update_one({"id": entity_id}, {"$set": {"state": state}})
+    await db.events.insert_one(SecurityEvent(source=target["name"], message=f"Cast avviato: {label}", level="info").model_dump())
+    doc = await db.entities.find_one({"id": entity_id}, NOID)
+    await broadcast({"type": "entities", "affected": [doc]})
+    return {"entity": doc, "demo": bool(cast.get("demo"))}
+
+
+@api_router.post("/cast/{entity_id}/stop")
+async def cast_stop(entity_id: str):
+    target = await _get_entity(entity_id, ("media_player",))
+    if ha.connected and target.get("ha_entity_id"):
+        try:
+            await ha.call_service("media_player", "media_stop", {"entity_id": target["ha_entity_id"]})
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("cast stop failed: %s", exc)
+    state = {**(target.get("state") or {}), "cast": None, "status": "idle", "media_title": None, "media_artist": None}
+    await db.entities.update_one({"id": entity_id}, {"$set": {"state": state}})
+    doc = await db.entities.find_one({"id": entity_id}, NOID)
+    await broadcast({"type": "entities", "affected": [doc]})
+    return {"entity": doc}
 
 
 # ---------- Routes: Media players ----------
@@ -2258,6 +2552,10 @@ async def on_startup():
     await db.entities.create_index([("ha_entity_id", 1)])
     await seed_if_needed()
     settings = await get_settings_doc()
+    if not settings.get("pin_hash"):
+        await db.settings.update_one({"id": "singleton"}, {"$set": {"pin_hash": pinlib.hash_pin(pinlib.DEFAULT_PIN)}}, upsert=True)
+        settings = await get_settings_doc()
+        logger.info("Default security PIN provisioned (%s) - change it in Impostazioni > Sicurezza", pinlib.DEFAULT_PIN)
     ha.on_event(ha_event)
     ha.configure(settings.get("ha_url"), settings.get("ha_token"), settings.get("ha_enabled"))
     if ha.enabled:

@@ -1,15 +1,17 @@
-import { Play, Pause, SkipBack, SkipForward, Power, Volume2, VolumeX, Settings2, Tv, Speaker, Music2 } from "lucide-react";
+import { Play, Pause, SkipBack, SkipForward, Power, Volume2, VolumeX, Settings2, Tv, Speaker, Music2, Cast } from "lucide-react";
+import { useState } from "react";
 import { useDomus } from "@/context/DomusContext";
 import { useDebouncedCommit } from "@/hooks/useDebouncedCommit";
 import { iconFor } from "@/lib/icons";
 import { HAAPI } from "@/lib/api";
+import CastDialog from "@/components/CastDialog";
 
 export const fmtDur = (sec) => { if (!sec && sec !== 0) return "--:--"; const m = Math.floor(sec / 60), s = Math.floor(sec % 60); return `${m}:${String(s).padStart(2, "0")}`; };
 export const artUrl = (s) => (s?.media_image_url ? (s.media_image_url.startsWith("/") ? HAAPI.proxyUrl(s.media_image_url) : s.media_image_url) : null);
 const APP_TINT = { Netflix: "#b81d24", YouTube: "#e62117", "Prime Video": "#00a8e1", "Disney+": "#1a3a8f", Spotify: "#1db954", DAZN: "#0a0a0a", RaiPlay: "#0a4a8f", "Amazon Music": "#25d1da", TuneIn: "#1c203c" };
 
 export default function MediaCard({ entity, onOpen }) {
-  const { mediaCommand, rooms } = useDomus();
+  const { mediaCommand, rooms, castStop } = useDomus();
   const s = entity.state || {};
   const isTv = s.device_class === "tv";
   const Icon = iconFor(entity.icon, isTv ? Tv : Speaker);
@@ -18,6 +20,8 @@ export default function MediaCard({ entity, onOpen }) {
   const tint = APP_TINT[s.app] || APP_TINT[s.media_artist] || null;
   const art = artUrl(s);
   const [vol, setVol] = useDebouncedCommit(s.volume ?? 0, (v) => mediaCommand(entity.id, "volume_set", v));
+  const [castOpen, setCastOpen] = useState(false);
+  const canCast = isTv || s.screen;
   const cmd = (c, v) => mediaCommand(entity.id, c, v);
   const pct = s.media_duration ? Math.min(100, ((s.media_position || 0) / s.media_duration) * 100) : 0;
 
@@ -41,8 +45,19 @@ export default function MediaCard({ entity, onOpen }) {
               {room && <><span className="opacity-40">·</span><span>{room.name}</span></>}
             </div>
           </div>
-          <button onClick={onOpen} className="btn-ghost w-8 h-8 rounded-full flex items-center justify-center text-muted" data-testid={`media-open-${entity.id}`} title="Dettagli"><Settings2 size={15} /></button>
+          <div className="flex items-center gap-1 shrink-0">
+            {canCast && <button onClick={() => setCastOpen(true)} className={`w-8 h-8 rounded-full flex items-center justify-center ${s.cast ? "bg-acc-soft text-acc pulse-ring" : "btn-ghost text-muted"}`} data-testid={`media-cast-${entity.id}`} title="Trasmetti"><Cast size={15} /></button>}
+            <button onClick={onOpen} className="btn-ghost w-8 h-8 rounded-full flex items-center justify-center text-muted" data-testid={`media-open-${entity.id}`} title="Dettagli"><Settings2 size={15} /></button>
+          </div>
         </div>
+
+        {s.cast && (
+          <div className="mt-3 glass-inner rounded-2xl px-3 py-2 flex items-center gap-2 text-[11px]" data-testid={`media-cast-badge-${entity.id}`}>
+            <Cast size={13} className="text-acc shrink-0" />
+            <span className="truncate">In trasmissione: <b>{s.cast.label}</b>{s.cast.demo ? " (demo)" : ""}</span>
+            <button onClick={() => castStop(entity.id)} className="ml-auto chip !py-0.5 !px-2 shrink-0" data-testid={`media-cast-stop-${entity.id}`}>Stop</button>
+          </div>
+        )}
 
         <div className="mt-4 flex items-center gap-3">
           <div className="w-14 h-14 rounded-2xl overflow-hidden shrink-0 flex items-center justify-center text-white" style={{ background: tint || "rgba(120,120,140,0.35)" }} data-testid={`media-art-${entity.id}`}>
@@ -84,6 +99,7 @@ export default function MediaCard({ entity, onOpen }) {
         )}
         {!isTv && <div className="mt-3 flex items-center gap-1.5"><Power size={11} className="text-muted" /><span className="text-[11px] text-muted">{s.screen ? "Altoparlante con schermo" : "Altoparlante"} · annunci vocali disponibili</span></div>}
       </div>
+      <CastDialog target={entity} open={castOpen} onClose={() => setCastOpen(false)} />
     </div>
   );
 }

@@ -1,7 +1,8 @@
 import { createContext, useContext, useEffect, useMemo, useState, useCallback, useRef } from "react";
 import { toast } from "sonner";
-import { AppAPI, RoomsAPI, EntitiesAPI, DiscoveredAPI, SettingsAPI, EventsAPI, GroupsAPI, ScenesAPI, ClimateAPI, MetersAPI, ChartsAPI, EnergyAPI, NotificationsAPI, ViewsAPI, MediaAPI, API } from "@/lib/api";
+import { AppAPI, RoomsAPI, EntitiesAPI, DiscoveredAPI, SettingsAPI, EventsAPI, GroupsAPI, ScenesAPI, ClimateAPI, MetersAPI, ChartsAPI, EnergyAPI, NotificationsAPI, ViewsAPI, MediaAPI, AlarmAPI, CastAPI, API } from "@/lib/api";
 import { computePhase } from "@/lib/solar";
+import PinDialog from "@/components/PinDialog";
 
 const DomusCtx = createContext(null);
 
@@ -30,6 +31,7 @@ export function DomusProvider({ children }) {
   const [ha, setHa] = useState(null);
   const [now, setNow] = useState(new Date());
   const [loading, setLoading] = useState(true);
+  const [pinReq, setPinReq] = useState(null);
   const seenNotif = useRef(null);
 
   const ingestNotifications = useCallback((list) => {
@@ -73,6 +75,7 @@ export function DomusProvider({ children }) {
           const m = JSON.parse(ev.data);
           if (m.type === "entities") mergeEntities(m.affected);
           else if (m.type === "ha") setHa(m.ha);
+          else if (m.type === "settings") setSettings(m.settings);
           else if (m.type === "refresh") refresh();
         } catch { /* ignore */ }
       };
@@ -207,6 +210,30 @@ export function DomusProvider({ children }) {
     return e;
   };
 
+  // ---- Security PIN (disarmo e azioni sensibili)
+  const pinNeeded = useCallback((scope) => {
+    if (!settings?.pin_enabled || !settings?.pin_set) return false;
+    return scope === "disarm" ? settings.pin_protect_disarm !== false : settings.pin_protect_sensitive !== false;
+  }, [settings]);
+
+  const askPin = useCallback((scope, reason) => {
+    if (!pinNeeded(scope)) return Promise.resolve({ ok: true, pin: null });
+    return new Promise((resolve) => setPinReq({ reason, resolve: (pin) => resolve({ ok: !!pin, pin }) }));
+  }, [pinNeeded]);
+
+  const setAlarmMode = async (mode) => {
+    const { ok, pin } = mode === "disarmed" ? await askPin("disarm", "Disarma l'antintrusione") : { ok: true, pin: null };
+    if (mode === "disarmed" && !ok) return null;
+    const res = await AlarmAPI.set(mode, pin);
+    setSettings((prev) => (prev ? { ...prev, alarm_armed: mode } : prev));
+    await reloadEvents();
+    return res;
+  };
+
+  // ---- Cast
+  const castStart = async (id, body) => { const r = await CastAPI.start(id, body); mergeEntities([r.entity]); return r; };
+  const castStop = async (id) => { const r = await CastAPI.stop(id); mergeEntities([r.entity]); return r; };
+
   const value = {
     rooms, entities, discovered, settings, events, groups, scenes, thermostats, zones, weather, meters, charts, notifications, energy, views, ha,
     loading, now, phase, effectiveTheme,
@@ -220,7 +247,15 @@ export function DomusProvider({ children }) {
     refreshEnergy, createMeter, updateMeter, deleteMeter, createChart, updateChart, deleteChart,
     markNotificationsRead, clearNotifications, setAvailability,
     createView, updateView, deleteView, mediaCommand,
+    askPin, pinNeeded, setAlarmMode, castStart, castStop,
   };
 
-  return <DomusCtx.Provider value={value}>{children}</DomusCtx.Provider>;
+  return (
+    <DomusCtx.Provider value={value}>
+      {children}
+      <PinDialog open={!!pinReq} reason={pinReq?.reason}
+        onCancel={() => { pinReq?.resolve(null); setPinReq(null); }}
+        onConfirm={(pin) => { pinReq?.resolve(pin); setPinReq(null); }} />
+    </DomusCtx.Provider>
+  );
 }

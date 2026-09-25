@@ -44,10 +44,10 @@ export default function DeviceBubble({ entity }) {
       <div className="flex items-start gap-3">
         <button
           onClick={toggle} data-testid={`toggle-${entity.id}`} aria-pressed={isOn}
-          className={`icon-btn w-11 h-11 shrink-0 ${isOn || (isAuto && s.enabled) ? "icon-on" : "icon-off"} ${offline ? "opacity-60" : ""}`}
+          className={`icon-btn press w-11 h-11 shrink-0 ${isOn || (isAuto && s.enabled) ? "icon-on glow-on" : "icon-off"} ${offline ? "opacity-60" : ""}`}
           style={tint ? { background: `${tint}55` } : undefined}
         >
-          <Icon size={19} />
+          <Icon key={isOn ? "on" : "off"} size={19} className="pop-in" />
         </button>
         <div className="flex-1 min-w-0">
           <div className="font-semibold text-sm truncate" title={entity.name}>{entity.name}</div>

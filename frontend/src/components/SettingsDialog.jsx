@@ -1,11 +1,13 @@
 import { useEffect, useState } from "react";
-import { MapPin, Sun, Moon, Sparkles, Settings as SettingsIcon, Cloud, CloudRain, CloudSnow, CloudFog, CloudLightning, Wand2, X, Plus, Image as ImageIcon, Cpu, HardDrive, AlertTriangle, Home } from "lucide-react";
+import { MapPin, Sun, Moon, Sparkles, Settings as SettingsIcon, Cloud, CloudRain, CloudSnow, CloudFog, CloudLightning, Wand2, X, Plus, Image as ImageIcon, Cpu, HardDrive, AlertTriangle, Home, Lock, ShieldCheck } from "lucide-react";
 import { toast } from "sonner";
 import Modal from "@/components/Modal";
 import ColorWheel from "@/components/ColorWheel";
 import HASettings from "@/components/HASettings";
 import BackupSettings from "@/components/BackupSettings";
 import ProblemsSection from "@/components/ProblemsSection";
+import PinSettings from "@/components/PinSettings";
+import AlarmSettings from "@/components/AlarmSettings";
 import { useDomus } from "@/context/DomusContext";
 import { rgbToHex } from "@/lib/color";
 
@@ -13,7 +15,7 @@ const WEATHER = [
   { k: "auto", l: "Automatico", I: Wand2 }, { k: "clear", l: "Sereno", I: Sun }, { k: "clouds", l: "Nuvoloso", I: Cloud },
   { k: "fog", l: "Nebbia", I: CloudFog }, { k: "rain", l: "Pioggia", I: CloudRain }, { k: "snow", l: "Neve", I: CloudSnow }, { k: "storm", l: "Temporale", I: CloudLightning },
 ];
-const TABS = [{ k: "general", l: "Casa", I: Home }, { k: "ha", l: "Home Assistant", I: Cpu }, { k: "backup", l: "Backup", I: HardDrive }, { k: "problems", l: "Problemi", I: AlertTriangle }];
+const TABS = [{ k: "general", l: "Casa", I: Home }, { k: "security", l: "Sicurezza", I: Lock }, { k: "alarm", l: "Allarme", I: ShieldCheck }, { k: "ha", l: "Home Assistant", I: Cpu }, { k: "backup", l: "Backup", I: HardDrive }, { k: "problems", l: "Problemi", I: AlertTriangle }];
 
 export default function SettingsDialog({ open, onOpenChange, initialTab = "general" }) {
   const { settings, weather, updateSettings, refresh, ha, notifications, entities } = useDomus();
@@ -66,6 +68,8 @@ export default function SettingsDialog({ open, onOpenChange, initialTab = "gener
         ))}
       </div>
       {tab === "ha" && <HASettings />}
+      {tab === "security" && <PinSettings />}
+      {tab === "alarm" && <AlarmSettings />}
       {tab === "backup" && <BackupSettings />}
       {tab === "problems" && <ProblemsSection />}
       {tab === "general" && <div className="space-y-7">

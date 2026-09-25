@@ -22,7 +22,7 @@ export default function CameraGrid({ cams: camsProp, columns = "grid-cols-1 sm:g
 
   return (
     <div className="space-y-4" data-testid="camera-grid">
-      <div className={`grid ${columns} gap-4`}>
+      <div className={`grid ${columns} gap-4 stagger`}>
         {cams.map((c, i) => (
           <CamCard key={c.id} cam={c} bg={camBg(c, i)} live={!!(ha?.connected && c.ha_entity_id)} onOpen={() => setFocused(c.id)} onToggleRec={() => updateEntity(c.id, { state: { recording: !c.state?.recording } })} />
         ))}
