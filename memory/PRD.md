@@ -20,6 +20,14 @@ Interfaccia grafica web per gestire la domotica Home Assistant. Mini PC Linux Ub
 - Frontend: React 19 + Tailwind + shadcn/ui + Sonner + Recharts. State via DomusContext (polling 30s + WebSocket live), API in src/lib/api.js.
 
 ## Implemented
+### Giugno 2026 (iter. 4) – 22/22 test backend + flussi UI verificati
+- **PIN di sicurezza** (`pin.py`, PBKDF2-SHA256 200k iterazioni, hash in `settings`, lockout 60s dopo 5 tentativi): PIN richiesto per **disarmare** l'allarme e per le **azioni sensibili** (apri porta citofono, privacy telecamera, sirena). Tastierino `PinDialog`, `askPin()` nel context, tab Impostazioni → **Sicurezza** (`PinSettings.jsx`) con toggle e cambio PIN. PIN iniziale `1234`. Endpoint `/api/pin/status|verify|change`, enforcement server-side su `/api/alarm/set/{mode}`, `/api/intercom/{id}/answer?action=unlock` e `PATCH /api/entities/{id}` (privacy/siren/locked).
+- **Pannello allarme HA reale**: tab Impostazioni → **Allarme** (`AlarmSettings.jsx`) con selezione dell'entità `alarm_control_panel.*`, modalità supportate (`supported_features` → disarmed/home/away/night/vacation/custom), zone Domus appartenenti al pannello, codice HA (PIN Domus come codice o codice dedicato). Autorilevamento del pannello all'import HA, `GET /api/alarm/panels|state`, armamento/disarmo reali via `alarm_control_panel.*` e sync bidirezionale (stato HA → `settings.alarm_armed`, push websocket `type: "settings"`). `AlarmPanel.jsx` mostra le modalità configurate, lo stato del pannello (arming/pending/triggered) e i badge pannello HA / PIN.
+- **Stream video reale**: `CameraPlayer.jsx` con **hls.js** → HLS da HA (`camera/stream` via WS, proxy `/api/ha/hls/{path}`) con fallback automatico MJPEG (`/api/cameras/{id}/stream`, ora con controllo di stato upstream) → snapshot ogni 5s → immagine demo; badge con la sorgente attiva.
+- **Cast su schermi**: `CastDialog.jsx` dalla tab Media (TV/Nest Hub/Echo Show) per trasmettere una **telecamera** (`camera.play_stream`) o una **dashboard Domus** (Sol Invictus, Terminus, viste custom, URL libero via `media_player.play_media` type `url`); badge "In trasmissione" sulla card e **Stop trasmissione** (`media_player.media_stop`). Endpoint `/api/cast/{id}` e `/api/cast/{id}/stop`.
+- **Micro-animazioni**: `press` (scale al tocco), `pop-in` sull'icona di accensione, `glow-on` all'accensione luci/prese, `pulse-ring` su cast attivo e PIN, ingressi `stagger` su griglia dispositivi e camere, `shake` sul PIN errato, rispetto di `prefers-reduced-motion`.
+
+### Febbraio-Giugno 2026 (iter. 1-3)
 ### Feb 2026 (iter. 1-2)
 - Sol Invictus: stanze, luci (dimmer/colore/ColorWheel), prese con wattaggio, gruppi sync/placche, scene, clima multi-zona (TempDial), Consumi (contatori virtuali, grafici donut/radiali/linee, costi fissi+variabili), IconPicker, stato offline/online, notifiche.
 - Terminus: camere, citofono, antintrusione, eventi. Sfondo dinamico cielo/meteo (Open-Meteo). Banner/loghi utente animati.
@@ -35,8 +43,7 @@ Interfaccia grafica web per gestire la domotica Home Assistant. Mini PC Linux Ub
 - Tab Problemi: offline, batterie basse (<25%), avvisi non letti, stato HA; toggle simulazione guasti e pallino online.
 
 ## Backlog / Future
-- P1: stream video reale (HLS/WebRTC via HA `camera/stream` o go2rtc) al posto dello snapshot MJPEG proxy.
-- P1: mappatura `alarm_control_panel` HA esplicita (oggi: primo pannello trovato) e zone reali del pannello.
+- P1: WebRTC/go2rtc a latenza minima come alternativa all'HLS nel dettaglio camera.
 - P2: editor automazioni visuale; ordinamento drag&drop viste/stanze; storico eventi persistente per sensore.
-- P2: notifiche push (mobile) su campanello/allarme; PIN per disarmo.
-- P2: Cast di dashboard/URL su Nest Hub/Android TV (media_player.play_media type cast).
+- P2: notifiche push (mobile) su campanello/allarme.
+- P2: log accessi PIN (chi ha disarmato e quando) e PIN multipli per utente/ospite.

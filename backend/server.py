@@ -1840,7 +1840,12 @@ async def set_alarm(mode: str, payload: PinBody | None = None):
             if panel_eid:
                 data: Dict[str, Any] = {"entity_id": panel_eid}
                 code = settings.get("alarm_ha_code") or ((payload or PinBody()).pin if settings.get("alarm_use_pin_as_code", True) else "")
-                if code:
+                # HA panels always want the code to disarm; when arming it is only sent if the panel requires it.
+                needs_code = True
+                if mode != "disarmed":
+                    snap = await alarm_panel_snapshot(settings) or {}
+                    needs_code = bool(snap.get("code_arm_required", True))
+                if code and needs_code:
                     data["code"] = code
                 await ha.call_service("alarm_control_panel", hac.ALARM_SERVICE[mode], data)
                 upd["alarm_ha_state"] = ""

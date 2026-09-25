@@ -1,0 +1,40 @@
+{
+  "iteration": 4,
+  "date": "2026-06-25",
+  "scope": "PIN disarmo + azioni sensibili, Pannello allarme HA reale, Stream video HLS, Cast su schermi, micro-animazioni UI",
+  "backend": {
+    "suite": "/app/backend/tests/test_domus_v4.py",
+    "command": "python -m pytest tests/test_domus_v4.py -q -p no:randomly -n 0",
+    "result": "22/22 PASS",
+    "covered": [
+      "GET /api/pin/status (nessun hash esposto), /api/settings e /api/app-data mascherano pin_hash e alarm_ha_code",
+      "POST /api/pin/verify: 1234 ok, errato 401, 5 errori -> 429 con lock_seconds",
+      "POST /api/pin/change: current errato 401, cambio e ripristino ok",
+      "POST /api/alarm/set/disarmed: senza pin 401, pin errato 401, 1234 ok; arm home/away/night senza pin",
+      "GET /api/alarm/panels e /api/alarm/state (panel snapshot, supported_modes, zone)",
+      "Armamento reale su HA: alarm_control_panel.alarm_arm_away; disarmo con code=PIN (code inviato in arm solo se code_arm_required)",
+      "Sync HA -> Domus: stato pannello armed_night propagato a settings.alarm_armed=night via websocket",
+      "POST /api/cameras/{id}/stream-url: HA -> available/hls/url; demo -> available=false reason=demo",
+      "GET /api/ha/hls/{path}: proxy playlist m3u8 (content-type application/vnd.apple.mpegurl)",
+      "POST /api/cast/{id}: camera -> camera.play_stream, dashboard -> media_player.play_media(url); /stop -> media_player.media_stop + state.cast azzerato",
+      "PATCH /api/entities/{id} con state.privacy: senza pin 401, con pin 200"
+    ],
+    "notes": "Eseguire serialmente: i test condividono PIN e stato allarme (xdist provoca falsi negativi)."
+  },
+  "frontend": {
+    "method": "screenshot_tool (Playwright) - smoke e flussi principali",
+    "verified": [
+      "Terminus: disarmo apre PinDialog; PIN errato mostra pin-error; 1234 disarma (alarm-status = Disarmato); armare non chiede PIN",
+      "AlarmPanel: 6 modalita dal pannello HA, pill 'pannello HA - alarm_control_panel.allarme_casa' e 'PIN per disarmare'",
+      "CameraDetail: CameraPlayer con data-source hls|mjpeg|snapshot|demo e badge sorgente; catena di fallback verificata (HLS -> MJPEG -> snapshot)",
+      "CameraDetail: privacy chiede il PIN (annulla = nessuna modifica)",
+      "Impostazioni: tab Sicurezza (toggle + cambio PIN) e tab Allarme (select pannello, sync modalita, zone, codice HA) funzionanti",
+      "Media: pulsante Trasmetti su TV/schermi apre CastDialog; cast camera e cast dashboard creano il badge 'In trasmissione' con Stop; Stop azzera il cast",
+      "Mobile 390px: nessun overflow orizzontale rilevante (solo elementi decorativi .fx-rays dentro container overflow-hidden)"
+    ]
+  },
+  "known_limitations": [
+    "Nel pod non esiste un HA reale: lo stream HLS del finto HA restituisce solo una playlist fittizia, quindi il player degrada a MJPEG/snapshot (comportamento atteso). Su HA reale il player usa hls.js sul flusso /api/hls proxato.",
+    "Il cast di dashboard richiede che il mini PC sia raggiungibile dalla rete locale dello schermo."
+  ]
+}
