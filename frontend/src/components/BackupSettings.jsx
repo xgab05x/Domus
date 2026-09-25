@@ -9,7 +9,7 @@ const fmtSize = (b) => (b > 1048576 ? `${(b / 1048576).toFixed(1)} MB` : `${Math
 
 // Local backups on the mini PC: folder, schedule, retention, create / restore / download / import.
 export default function BackupSettings() {
-  const { settings, updateSettings, refresh } = useDomus();
+  const { settings, updateSettings, refresh, askPin } = useDomus();
   const [data, setData] = useState(null);
   const [dir, setDir] = useState(settings?.backup_dir || "");
   const [label, setLabel] = useState("");
@@ -23,15 +23,23 @@ export default function BackupSettings() {
   const create = async () => { setBusy("create"); try { const info = await BackupsAPI.create(label.trim() || undefined); setLabel(""); await load(); toast.success(`Backup creato: ${info.name}`); } catch (e) { toast.error(e?.response?.data?.detail || "Backup non riuscito"); } finally { setBusy(null); } };
   const restore = async (name) => {
     if (!window.confirm(`Ripristinare "${name}"?\nStanze, dispositivi, scene, gruppi, clima, consumi e viste verranno sostituiti con quelli del backup.`)) return;
+    const { ok: pinOk, pin } = await askPin("config", "Ripristina backup");
+    if (!pinOk) return;
     setBusy(name);
-    try { const r = await BackupsAPI.restore(name); await refresh(); toast.success(`Ripristinato: ${Object.entries(r.counts).map(([k, v]) => `${v} ${k}`).join(", ")}`); }
+    try { const r = await BackupsAPI.restore(name, true, pin); await refresh(); toast.success(`Ripristinato: ${Object.entries(r.counts).map(([k, v]) => `${v} ${k}`).join(", ")}`); }
     catch (e) { toast.error(e?.response?.data?.detail || "Ripristino non riuscito"); } finally { setBusy(null); }
   };
   const remove = async (name) => { if (!window.confirm(`Eliminare il file ${name}?`)) return; await BackupsAPI.remove(name); await load(); toast.success("Backup eliminato"); };
   const upload = async (e, doRestore) => {
     const f = e.target.files?.[0]; if (!f) return;
+    let pin = null;
+    if (doRestore) {
+      const res = await askPin("config", "Importa e ripristina backup");
+      if (!res.ok) { e.target.value = ""; return; }
+      pin = res.pin;
+    }
     setBusy("upload");
-    try { const r = await BackupsAPI.upload(f, doRestore); await load(); if (doRestore) await refresh(); toast.success(doRestore ? `Importato e ripristinato: ${r.saved_as}` : `Importato: ${r.saved_as}`); }
+    try { const r = await BackupsAPI.upload(f, doRestore, pin); await load(); if (doRestore) await refresh(); toast.success(doRestore ? `Importato e ripristinato: ${r.saved_as}` : `Importato: ${r.saved_as}`); }
     catch (err) { toast.error(err?.response?.data?.detail || "File non valido"); } finally { setBusy(null); e.target.value = ""; }
   };
 

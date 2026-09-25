@@ -12,7 +12,10 @@ from typing import Any, Dict, List, Optional
 logger = logging.getLogger("domus.backup")
 
 COLLECTIONS = ["rooms", "entities", "groups", "scenes", "thermostats", "zones", "meters", "charts", "views"]
-SETTINGS_EXCLUDE = {"ha_token", "seed_version", "backup_last", "id"}
+# Secrets and security state never leave (or re-enter) the app through a backup file.
+SETTINGS_EXCLUDE = {"ha_token", "seed_version", "backup_last", "id", "pin_hash", "pin_failed", "pin_locked_until",
+                    "pin_enabled", "pin_protect_disarm", "pin_protect_sensitive", "pin_set",
+                    "alarm_ha_code", "alarm_code_set", "alarm_armed", "alarm_ha_state"}
 NOID = {"_id": 0}
 DEFAULT_DIR = os.environ.get("BACKUP_DIR", "/var/lib/domus/backups")
 NAME_RE = re.compile(r"^domus-(\d{8}-\d{6})(?:-(.+))?\.json$")

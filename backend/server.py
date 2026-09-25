@@ -15,6 +15,7 @@ import random
 import re
 import time
 from pathlib import Path
+from urllib.parse import urlparse
 from pydantic import BaseModel, Field, ConfigDict
 from typing import List, Optional, Literal, Any, Dict
 import uuid
@@ -502,6 +503,7 @@ class Settings(BaseModel):
 
 
 class SettingsUpdate(BaseModel):
+    pin: Optional[str] = None
     address: Optional[str] = None
     latitude: Optional[float] = None
     longitude: Optional[float] = None
@@ -550,8 +552,11 @@ def public_settings(doc: Dict[str, Any]) -> Dict[str, Any]:
 
 
 async def require_pin(settings: Dict[str, Any], provided: Optional[str], scope: str):
-    """Enforce the household PIN for a protected action (scope: `disarm` or `sensitive`)."""
-    if not pinlib.required_for(settings, scope):
+    """Enforce the household PIN for a protected action (scope: `disarm`, `sensitive` or `config`)."""
+    if scope == "config":
+        if not (settings.get("pin_enabled", True) and settings.get("pin_hash")):
+            return
+    elif not pinlib.required_for(settings, scope):
         return
     if not provided:
         raise HTTPException(401, "PIN richiesto")
@@ -560,6 +565,10 @@ async def require_pin(settings: Dict[str, Any], provided: Optional[str], scope: 
         raise HTTPException(429, f"Troppi tentativi errati: riprova tra {left} secondi")
     if not ok:
         raise HTTPException(401, "PIN errato")
+
+
+def sensitive_keys(patch: Dict[str, Any]) -> bool:
+    return any(k in (patch or {}) for k in pinlib.SENSITIVE_STATE_KEYS)
 
 
 # ---------- Realtime broadcast to browsers ----------
@@ -1438,7 +1447,7 @@ async def update_entity(entity_id: str, payload: EntityUpdate):
         raise HTTPException(400, "Nothing to update")
     if "state" in raw:
         target = await db.entities.find_one({"id": entity_id}, NOID)
-        if target and target.get("type") in ("camera", "doorbell") and any(k in raw["state"] for k in pinlib.SENSITIVE_STATE_KEYS):
+        if target and sensitive_keys(raw["state"]):
             await require_pin(await get_settings_doc(), provided_pin, "sensitive")
     if meta:
         res = await db.entities.update_one({"id": entity_id}, {"$set": meta})
@@ -1562,10 +1571,12 @@ async def delete_scene(scene_id: str):
 
 
 @api_router.post("/scenes/{scene_id}/activate")
-async def activate_scene(scene_id: str):
+async def activate_scene(scene_id: str, payload: PinBody | None = None):
     s = await db.scenes.find_one({"id": scene_id}, NOID)
     if not s:
         raise HTTPException(404, "Scene not found")
+    if any(sensitive_keys(a.get("state") or {}) for a in s.get("actions", [])):
+        await require_pin(await get_settings_doc(), (payload or PinBody()).pin, "sensitive")
     affected: List[Dict[str, Any]] = []
     for a in s.get("actions", []):
         try:
@@ -1707,13 +1718,20 @@ async def get_settings():
     return public_settings(await get_settings_doc())
 
 
+PROTECTED_SETTINGS = ("pin_enabled", "pin_protect_disarm", "pin_protect_sensitive", "alarm_ha_code",
+                      "alarm_use_pin_as_code", "alarm_entity_id", "alarm_modes", "alarm_zone_ids", "alarm_armed")
+
+
 @api_router.patch("/settings", response_model=Settings)
 async def update_settings(payload: SettingsUpdate):
     upd = {k: v for k, v in payload.model_dump().items() if v is not None}
+    provided_pin = upd.pop("pin", None)
     if not upd:
         raise HTTPException(400, "Nothing to update")
     if "ha_token" in upd and not upd["ha_token"].strip():
         upd.pop("ha_token")
+    if any(k in upd for k in PROTECTED_SETTINGS):
+        await require_pin(await get_settings_doc(), provided_pin, "config")
     await db.settings.update_one({"id": "singleton"}, {"$set": upd}, upsert=True)
     if "climate_presets" in upd:
         await evaluate_all()
@@ -2083,9 +2101,12 @@ async def ha_states(limit: int = 500):
     return [{"entity_id": s["entity_id"], "state": s.get("state"), "name": (s.get("attributes") or {}).get("friendly_name"), "linked": s["entity_id"] in linked} for s in (states or [])[:limit]]
 
 
+HA_PROXY_PREFIXES = ("/api/camera_proxy/", "/api/camera_proxy_stream/", "/api/image_proxy/", "/api/media_player_proxy/", "/api/tts_proxy/")
+
+
 @api_router.get("/ha/proxy")
 async def ha_proxy(path: str):
-    if not ha.connected or not path.startswith("/api/") or ".." in path:
+    if not ha.connected or ".." in path or "%2e%2e" in path.lower() or not path.startswith(HA_PROXY_PREFIXES):
         raise HTTPException(404, "Non disponibile")
     try:
         content, ctype = await ha.fetch_bytes(path)
@@ -2237,7 +2258,7 @@ async def camera_stream_url(entity_id: str):
 @api_router.get("/ha/hls/{path:path}")
 async def ha_hls(path: str):
     """Transparent proxy for HA HLS playlists/segments (relative URLs inside the playlist keep working)."""
-    if not ha.connected or ".." in path:
+    if not ha.connected or ".." in path or "%2e%2e" in path.lower() or not re.fullmatch(r"[A-Za-z0-9_\-./]+", path or ""):
         raise HTTPException(404, "Stream non disponibile")
     try:
         content, ctype = await ha.fetch_bytes(f"/api/hls/{path}", timeout=25)
@@ -2270,6 +2291,9 @@ async def cast_to_screen(entity_id: str, payload: CastBody):
     else:
         if not payload.url:
             raise HTTPException(400, "url richiesto")
+        parsed = urlparse(payload.url)
+        if parsed.scheme not in ("http", "https") or not parsed.hostname or "@" in (parsed.netloc or ""):
+            raise HTTPException(400, "URL non valido: ammessi solo http(s) senza credenziali")
         label = label or "Dashboard Domus"
         cast.update({"url": payload.url, "label": label})
         if ha.connected and target.get("ha_entity_id"):
@@ -2449,8 +2473,9 @@ async def create_backup(label: Optional[str] = None):
 
 
 @api_router.post("/backups/{name}/restore")
-async def restore_backup(name: str, include_settings: bool = True):
+async def restore_backup(name: str, include_settings: bool = True, payload: PinBody | None = None):
     settings = await get_settings_doc()
+    await require_pin(settings, (payload or PinBody()).pin, "config")
     try:
         path = bk.resolve_dir(settings) / bk.safe_name(name)
         data = bk.load_file(path)
@@ -2489,7 +2514,7 @@ async def download_backup(name: str):
 
 
 @api_router.post("/backups/import")
-async def import_backup(file: UploadFile = File(...), restore: bool = False):
+async def import_backup(file: UploadFile = File(...), restore: bool = False, pin: Optional[str] = None):
     raw = await file.read()
     if len(raw) > 50 * 1024 * 1024:
         raise HTTPException(413, "File troppo grande")
@@ -2507,6 +2532,7 @@ async def import_backup(file: UploadFile = File(...), restore: bool = False):
     (path / name).write_text(_json.dumps(data, ensure_ascii=False, indent=1), encoding="utf-8")
     counts = None
     if restore:
+        await require_pin(settings, pin, "config")
         counts = await bk.restore(db, data)
         await evaluate_all()
         await broadcast({"type": "refresh"})
@@ -2541,10 +2567,12 @@ async def root():
 
 app.include_router(api_router)
 
+CORS_ORIGINS = [o.strip() for o in os.environ.get('CORS_ORIGINS', '*').split(',') if o.strip()]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_credentials=True,
-    allow_origins=os.environ.get('CORS_ORIGINS', '*').split(','),
+    allow_credentials="*" not in CORS_ORIGINS,
+    allow_origins=CORS_ORIGINS,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -2560,7 +2588,7 @@ async def on_startup():
     if not settings.get("pin_hash"):
         await db.settings.update_one({"id": "singleton"}, {"$set": {"pin_hash": pinlib.hash_pin(pinlib.DEFAULT_PIN)}}, upsert=True)
         settings = await get_settings_doc()
-        logger.info("Default security PIN provisioned (%s) - change it in Impostazioni > Sicurezza", pinlib.DEFAULT_PIN)
+        logger.info("Default security PIN provisioned - change it in Impostazioni > Sicurezza")
     ha.on_event(ha_event)
     ha.configure(settings.get("ha_url"), settings.get("ha_token"), settings.get("ha_enabled"))
     if ha.enabled:

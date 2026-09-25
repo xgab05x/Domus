@@ -35,7 +35,7 @@ export const ScenesAPI = {
   create: (data) => d(http.post("/scenes", data)),
   update: (id, data) => d(http.patch(`/scenes/${id}`, data)),
   remove: (id) => d(http.delete(`/scenes/${id}`)),
-  activate: (id) => d(http.post(`/scenes/${id}/activate`)),
+  activate: (id, pin) => d(http.post(`/scenes/${id}/activate`, { pin: pin || null })),
 };
 
 export const ClimateAPI = {
@@ -141,10 +141,10 @@ export const HAAPI = {
 export const BackupsAPI = {
   list: () => d(http.get("/backups")),
   create: (label) => d(http.post("/backups", null, { params: label ? { label } : {} })),
-  restore: (name, includeSettings = true) => d(http.post(`/backups/${encodeURIComponent(name)}/restore`, null, { params: { include_settings: includeSettings } })),
+  restore: (name, includeSettings = true, pin = null) => d(http.post(`/backups/${encodeURIComponent(name)}/restore`, { pin }, { params: { include_settings: includeSettings } })),
   remove: (name) => d(http.delete(`/backups/${encodeURIComponent(name)}`)),
   downloadUrl: (name) => `${API}/backups/${encodeURIComponent(name)}/download`,
-  upload: (file, restore = false) => { const fd = new FormData(); fd.append("file", file); return d(http.post("/backups/import", fd, { params: { restore }, headers: { "Content-Type": "multipart/form-data" } })); },
+  upload: (file, restore = false, pin = null) => { const fd = new FormData(); fd.append("file", file); return d(http.post("/backups/import", fd, { params: { restore, ...(pin ? { pin } : {}) }, headers: { "Content-Type": "multipart/form-data" } })); },
 };
 
 export const ProblemsAPI = { list: () => d(http.get("/problems")) };

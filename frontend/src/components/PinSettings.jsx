@@ -6,13 +6,13 @@ import { PinAPI } from "@/lib/api";
 
 // Settings tab: household PIN (disarm + sensitive actions).
 export default function PinSettings() {
-  const { settings, updateSettings } = useDomus();
+  const { settings, updateSettings, updateSettingsSecure } = useDomus();
   const [current, setCurrent] = useState("");
   const [next, setNext] = useState("");
   const [confirm, setConfirm] = useState("");
   const [busy, setBusy] = useState(false);
 
-  const save = async (patch) => { await updateSettings(patch); toast.success("Impostazioni salvate"); };
+  const save = async (patch) => { const r = await updateSettingsSecure(patch, "Modifica protezione PIN"); if (r) toast.success("Impostazioni salvate"); };
 
   const changePin = async () => {
     if (!/^\d{4,6}$/.test(next)) return toast.error("Il nuovo PIN deve avere 4-6 cifre");
@@ -22,7 +22,7 @@ export default function PinSettings() {
       await PinAPI.change(current, next);
       toast.success("PIN aggiornato");
       setCurrent(""); setNext(""); setConfirm("");
-      await updateSettings({ pin_enabled: settings?.pin_enabled !== false });
+      await updateSettings({ address: settings?.address });
     } catch (err) { toast.error(err?.response?.data?.detail || "Modifica PIN non riuscita"); }
     setBusy(false);
   };

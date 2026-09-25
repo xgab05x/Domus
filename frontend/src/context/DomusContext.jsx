@@ -164,7 +164,18 @@ export function DomusProvider({ children }) {
   const createScene = async (data) => { const s = await ScenesAPI.create(data); setScenes((p) => [...p, s]); return s; };
   const updateScene = async (id, data) => { const s = await ScenesAPI.update(id, data); setScenes((p) => p.map((x) => (x.id === id ? s : x))); return s; };
   const deleteScene = async (id) => { await ScenesAPI.remove(id); setScenes((p) => p.filter((x) => x.id !== id)); };
-  const activateScene = async (id) => { const res = await ScenesAPI.activate(id); mergeEntities(res.affected); };
+  const activateScene = async (id) => {
+    const scene = scenes.find((s) => s.id === id);
+    const sensitive = (scene?.actions || []).some((a) => ["privacy", "siren", "locked"].some((k) => k in (a.state || {})));
+    let pin = null;
+    if (sensitive) {
+      const res = await askPin("sensitive", `Attiva scena ${scene?.name || ""}`);
+      if (!res.ok) return;
+      pin = res.pin;
+    }
+    const res = await ScenesAPI.activate(id, pin);
+    mergeEntities(res.affected);
+  };
 
   // ---- Climate
   const createThermostat = async (data) => applyClimate(await ClimateAPI.createThermostat(data));
@@ -213,6 +224,7 @@ export function DomusProvider({ children }) {
   // ---- Security PIN (disarmo e azioni sensibili)
   const pinNeeded = useCallback((scope) => {
     if (!settings?.pin_enabled || !settings?.pin_set) return false;
+    if (scope === "config") return true;
     return scope === "disarm" ? settings.pin_protect_disarm !== false : settings.pin_protect_sensitive !== false;
   }, [settings]);
 
@@ -220,6 +232,13 @@ export function DomusProvider({ children }) {
     if (!pinNeeded(scope)) return Promise.resolve({ ok: true, pin: null });
     return new Promise((resolve) => setPinReq({ reason, resolve: (pin) => resolve({ ok: !!pin, pin }) }));
   }, [pinNeeded]);
+
+  // Settings that weaken security (PIN flags, alarm mapping/code) need the PIN both here and server-side.
+  const updateSettingsSecure = async (patch, reason) => {
+    const { ok, pin } = await askPin("config", reason || "Modifica impostazioni di sicurezza");
+    if (!ok) return null;
+    return updateSettings({ ...patch, ...(pin ? { pin } : {}) });
+  };
 
   const setAlarmMode = async (mode) => {
     const { ok, pin } = mode === "disarmed" ? await askPin("disarm", "Disarma l'antintrusione") : { ok: true, pin: null };
@@ -247,7 +266,7 @@ export function DomusProvider({ children }) {
     refreshEnergy, createMeter, updateMeter, deleteMeter, createChart, updateChart, deleteChart,
     markNotificationsRead, clearNotifications, setAvailability,
     createView, updateView, deleteView, mediaCommand,
-    askPin, pinNeeded, setAlarmMode, castStart, castStop,
+    askPin, pinNeeded, setAlarmMode, castStart, castStop, updateSettingsSecure,
   };
 
   return (

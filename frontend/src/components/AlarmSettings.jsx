@@ -17,7 +17,7 @@ const HA_STATE_LABEL = { disarmed: "disarmato", armed_home: "armato home", armed
 
 // Settings tab: map the real HA alarm_control_panel, its modes and the Domus zones that belong to it.
 export default function AlarmSettings() {
-  const { settings, updateSettings, entities, ha } = useDomus();
+  const { settings, updateSettingsSecure, entities, ha } = useDomus();
   const [panels, setPanels] = useState([]);
   const [state, setState] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -33,7 +33,10 @@ export default function AlarmSettings() {
   }, []);
   useEffect(() => { load(); }, [load]);
 
-  const save = async (patch, msg = "Impostazioni salvate") => { await updateSettings(patch); toast.success(msg); await load(); };
+  const save = async (patch, msg = "Impostazioni salvate") => {
+    const r = await updateSettingsSecure(patch, "Modifica configurazione allarme");
+    if (r) { toast.success(msg); await load(); }
+  };
   const panel = state?.panel;
   const toggleZone = (id) => {
     const base = selectedZones.length ? selectedZones : zones.map((z) => z.id);
