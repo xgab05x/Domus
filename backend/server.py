@@ -97,6 +97,7 @@ class Entity(BaseModel):
     last_seen: Optional[str] = None
     ha_entity_id: Optional[str] = None
     ha_device_id: Optional[str] = None
+    ha_name: str = ""
     controls: Dict[str, Any] = Field(default_factory=dict)
 
 
@@ -503,6 +504,10 @@ class Settings(BaseModel):
     alarm_volume: int = 85
     alarm_duration: int = 30
     custom_sounds: List[Dict[str, Any]] = Field(default_factory=list)
+    accent_sol: str = "#b08e54"
+    accent_ter: str = "#6887a8"
+    sol_label: str = "Sol Invictus"
+    terminus_label: str = "Terminus"
     weather_override: str = "auto"
     color_presets: List[Dict[str, Any]] = Field(default_factory=lambda: list(DEFAULT_COLOR_PRESETS))
     climate_presets: Dict[str, float] = Field(default_factory=lambda: dict(DEFAULT_CLIMATE_PRESETS))
@@ -547,6 +552,10 @@ class SettingsUpdate(BaseModel):
     alarm_sound: Optional[str] = None
     alarm_volume: Optional[int] = None
     alarm_duration: Optional[int] = None
+    accent_sol: Optional[str] = None
+    accent_ter: Optional[str] = None
+    sol_label: Optional[str] = None
+    terminus_label: Optional[str] = None
     weather_override: Optional[str] = None
     _pin_marker: bool = False
     color_presets: Optional[List[Dict[str, Any]]] = None
@@ -2167,14 +2176,14 @@ async def ha_import_entities() -> Dict[str, Any]:
         area = m.pop("area", None)
         existing = await db.entities.find_one({"ha_entity_id": m["ha_entity_id"]}, NOID)
         if existing:
-            upd = {"state": {**(existing.get("state") or {}), **m["state"]}, "available": m["available"], "controls": m["controls"], "integration": m["integration"], "ha_device_id": m.get("ha_device_id")}
+            upd = {"state": {**(existing.get("state") or {}), **m["state"]}, "available": m["available"], "controls": m["controls"], "integration": m["integration"], "ha_device_id": m.get("ha_device_id"), "ha_name": m["name"]}
             if existing.get("type") != m["type"] and existing.get("type") in ("switch", "plug", "camera", "doorbell"):
                 upd["type"] = m["type"]
             await db.entities.update_one({"id": existing["id"]}, {"$set": upd})
             updated += 1
         else:
             room = rooms.get((area or "").lower())
-            ent = Entity(**m, room_id=room["id"] if room else None)
+            ent = Entity(**m, room_id=room["id"] if room else None, ha_name=m["name"])
             await db.entities.insert_one(ent.model_dump())
             created += 1
     await push_notification("info", "Import da Home Assistant completato", f"{created} nuove entità, {updated} aggiornate, {len(area_names)} aree.")
@@ -2268,6 +2277,7 @@ async def ha_event(data: Dict[str, Any]):
             asyncio.create_task(au.fire("state", {"entity_id": ent["id"], "entity": {**ent, **upd}, "patch": changed, "before": ent.get("state") or {}}))
         if ent["type"] == "alarm_zone" and patch.get("triggered") and not (ent.get("state") or {}).get("triggered"):
             await db.events.insert_one(SecurityEvent(source=ent["name"], message="Zona attivata", level="warning").model_dump())
+            await trigger_intrusion({**ent, **upd})
     parents = await db.entities.find({"$or": [{f"controls.{k}": eid} for k in ("privacy", "night_vision", "motion_detection", "siren", "led", "flip", "ptz_preset", "chime", "unlock", "ring", "motion", "battery", "signal", "power_w", "energy_kwh", "voltage_v", "current_a")]}, NOID).to_list(50)
     for p in parents:
         key = next((k for k, v in (p.get("controls") or {}).items() if v == eid), None)
@@ -2434,10 +2444,26 @@ async def camera_ptz(entity_id: str, payload: PTZBody):
     raise HTTPException(400, "direction or preset required")
 
 
+async def trigger_intrusion(ent: Dict[str, Any]) -> bool:
+    """Zona attivata a impianto armato: log, notifica e popup allarme su tutte le schermate."""
+    settings = await get_settings_doc()
+    if (settings.get("alarm_armed") or "disarmed") == "disarmed" or (ent.get("state") or {}).get("bypass"):
+        return False
+    await db.events.insert_one(SecurityEvent(source=ent["name"], message="ALLARME INTRUSIONE", level="alert").model_dump())
+    await push_notification("error", f"ALLARME: {ent['name']}", "Intrusione rilevata", ent["id"])
+    await lg.add(db, "alarm", f"ALLARME INTRUSIONE · {ent['name']}", device=CURRENT_DEVICE.get(), entity_id=ent["id"],
+                 entity_name=ent["name"], after="triggered", level="alert")
+    await broadcast({"type": "alarm", "state": "triggered", "zone": ent["name"], "entity_id": ent["id"]})
+    asyncio.create_task(au.fire("alarm", {"mode": "triggered", "zone": ent["name"]}))
+    return True
+
+
 @api_router.post("/cameras/{entity_id}/simulate-motion")
 async def camera_simulate_motion(entity_id: str):
     cam = await _get_entity(entity_id, ("camera", "doorbell", "alarm_zone"))
     key = "triggered" if cam["type"] == "alarm_zone" else "motion"
+    if key == "triggered":
+        await trigger_intrusion(cam)
     await db.entities.update_one({"id": entity_id}, {"$set": {f"state.{key}": True, "state.last_motion" if key == "motion" else "state.last_triggered": now_iso()}})
     await db.events.insert_one(SecurityEvent(source=cam["name"], message="Movimento rilevato" if key == "motion" else "Zona attivata", level="warning").model_dump())
     await push_notification("warning", f"{cam['name']}: {'movimento rilevato' if key == 'motion' else 'zona attivata'}", "", entity_id)

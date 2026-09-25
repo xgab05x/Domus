@@ -10,6 +10,8 @@ import PinSettings from "@/components/PinSettings";
 import AlarmSettings from "@/components/AlarmSettings";
 import DevicesSettings from "@/components/DevicesSettings";
 import SoundSettings from "@/components/SoundSettings";
+import AccentPicker from "@/components/AccentPicker";
+import { useDebouncedCommit } from "@/hooks/useDebouncedCommit";
 import { useDomus } from "@/context/DomusContext";
 import { rgbToHex } from "@/lib/color";
 
@@ -25,6 +27,8 @@ export default function SettingsDialog({ open, onOpenChange, initialTab = "gener
   const [newPreset, setNewPreset] = useState({ name: "", rgb: [255, 200, 120] });
   const [showWheel, setShowWheel] = useState(false);
   const [tab, setTab] = useState(initialTab);
+  const [accSol, setAccSol] = useDebouncedCommit(settings?.accent_sol || "#b08e54", (v) => updateSettings({ accent_sol: v }), 260);
+  const [accTer, setAccTer] = useDebouncedCommit(settings?.accent_ter || "#6887a8", (v) => updateSettings({ accent_ter: v }), 260);
 
   useEffect(() => { setLocal(settings); }, [settings, open]);
   useEffect(() => { if (open) setTab(initialTab); }, [open, initialTab]);
@@ -79,6 +83,20 @@ export default function SettingsDialog({ open, onOpenChange, initialTab = "gener
       {tab === "general" && <div className="space-y-7">
         <Section title="Nome casa">
           <input data-testid="home-name-input" className="field" value={local.home_name || ""} onChange={(e) => setLocal({ ...local, home_name: e.target.value })} onBlur={() => save({ home_name: local.home_name })} />
+        </Section>
+
+        <Section title="Nomi delle sezioni" hint="Rinomina le due plance come preferisci.">
+          <div className="grid sm:grid-cols-2 gap-2">
+            <input data-testid="sol-label-input" className="field" placeholder="Sol Invictus" value={local.sol_label ?? "Sol Invictus"} onChange={(e) => setLocal({ ...local, sol_label: e.target.value })} onBlur={() => save({ sol_label: local.sol_label })} />
+            <input data-testid="terminus-label-input" className="field" placeholder="Terminus" value={local.terminus_label ?? "Terminus"} onChange={(e) => setLocal({ ...local, terminus_label: e.target.value })} onBlur={() => save({ terminus_label: local.terminus_label })} />
+          </div>
+        </Section>
+
+        <Section title="Colore di tasti e grafiche" hint="Ruota colori: un colore per Sol Invictus e uno per Terminus, cambia subito su tutta l'interfaccia.">
+          <div className="grid sm:grid-cols-2 gap-3">
+            <AccentPicker label="Sol Invictus" value={accSol} def="#b08e54" onChange={setAccSol} testid="accent-sol" />
+            <AccentPicker label="Terminus" value={accTer} def="#6887a8" onChange={setAccTer} testid="accent-ter" />
+          </div>
         </Section>
 
         <Section title="Posizione geografica" hint="Usata per alba/tramonto e per il meteo reale che anima lo sfondo.">

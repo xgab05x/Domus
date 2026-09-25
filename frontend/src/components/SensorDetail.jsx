@@ -90,6 +90,7 @@ export default function SensorDetail({ entity, open, onClose }) {
               <IconButton value={entity.icon} onClick={() => setPicker(true)} testid="sensor-icon-btn" />
               <input className="field flex-1" value={name} onChange={(e) => setName(e.target.value)} onBlur={saveName} onKeyDown={(e) => e.key === "Enter" && saveName()} data-testid="sensor-name-input" />
             </div>
+            {entity.ha_name && <p className="text-[11px] text-muted mt-1">Nome in Home Assistant: <span className="font-mono">{entity.ha_name}</span> (invariato)</p>}
           </div>
           {isZone && (
             <div>

@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
-import { ShieldOff, Siren, X, VolumeX } from "lucide-react";
+import { ShieldOff, Siren, X } from "lucide-react";
 import { toast } from "sonner";
 import CameraPlayer from "@/components/CameraPlayer";
 import { useDomus } from "@/context/DomusContext";
@@ -37,7 +37,7 @@ export default function AlarmPopup({ alert, onClose }) {
             <div className="font-display text-lg font-bold leading-tight">ALLARME INTRUSIONE</div>
             <div className="text-xs opacity-90 truncate">{zone?.name || alert.zone || "Zona sconosciuta"} · da {Math.floor(elapsed / 60)}:{String(elapsed % 60).padStart(2, "0")}</div>
           </div>
-          <button onClick={() => { stopSound(); onClose(); }} className="w-9 h-9 rounded-full bg-black/25 hover:bg-black/40 flex items-center justify-center shrink-0" data-testid="alarm-popup-close"><X size={16} /></button>
+          <button onClick={onClose} className="w-9 h-9 rounded-full bg-black/25 hover:bg-black/40 flex items-center justify-center shrink-0" data-testid="alarm-popup-close"><X size={16} /></button>
         </div>
 
         {cam && (
@@ -51,8 +51,7 @@ export default function AlarmPopup({ alert, onClose }) {
           <button onClick={disarm} disabled={busy} className="w-full btn-acc py-3.5 rounded-2xl font-semibold flex items-center justify-center gap-2 disabled:opacity-50" data-testid="alarm-popup-disarm">
             <ShieldOff size={18} /> Disarma con il PIN
           </button>
-          <button onClick={stopSound} className="w-full chip justify-center !py-2.5" data-testid="alarm-popup-silence"><VolumeX size={14} /> Silenzia la sirena su questo dispositivo</button>
-          <p className="text-[11px] text-muted text-center">Il disarmo viene inviato anche al pannello reale collegato ({settings?.alarm_entity_id || "nessun pannello HA"}).</p>
+          <p className="text-[11px] text-muted text-center">La sirena si spegne solo con il PIN corretto. Il disarmo viene inviato anche al pannello reale collegato ({settings?.alarm_entity_id || "nessun pannello HA"}).</p>
         </div>
       </div>
     </div>,

@@ -21,6 +21,7 @@ def ts():
 STATES = {
     "light.cucina_faretti": {"state": "on", "attributes": {"friendly_name": "Faretti Cucina HA", "brightness": 200, "supported_color_modes": ["brightness"]}},
     "light.led_salotto": {"state": "off", "attributes": {"friendly_name": "LED Salotto HA", "brightness": 80, "rgb_color": [255, 100, 50], "supported_color_modes": ["hs", "color_temp"]}},
+    "light.sonoff_tx_led": {"state": "off", "attributes": {"friendly_name": "Sonoff TX LED", "supported_color_modes": ["rgb"], "effect_list": ["Rainbow", "Colorloop", "Party", "Strobe"], "effect": None}},
     "switch.presa_forno": {"state": "on", "attributes": {"friendly_name": "Presa Forno HA", "device_class": "outlet"}},
     "sensor.presa_forno_power": {"state": "1850.5", "attributes": {"friendly_name": "Presa Forno Power", "device_class": "power", "unit_of_measurement": "W"}},
     "sensor.presa_forno_energy": {"state": "12.4", "attributes": {"friendly_name": "Presa Forno Energy", "device_class": "energy", "unit_of_measurement": "kWh"}},
@@ -47,6 +48,7 @@ REG = {
         {"entity_id": "sensor.presa_forno_energy", "device_id": "dev_forno", "platform": "sonoff"},
         {"entity_id": "light.cucina_faretti", "device_id": "dev_faretti", "platform": "sonoff", "area_id": "cucina"},
         {"entity_id": "light.led_salotto", "device_id": "dev_led", "platform": "tuya", "area_id": "studio"},
+        {"entity_id": "light.sonoff_tx_led", "device_id": "dev_tx", "platform": "sonoff", "area_id": "studio"},
         {"entity_id": "camera.tapo_ingresso", "device_id": "dev_tapo", "platform": "tapo"},
         {"entity_id": "switch.tapo_ingresso_privacy_mode", "device_id": "dev_tapo", "platform": "tapo"},
         {"entity_id": "select.tapo_ingresso_night_vision", "device_id": "dev_tapo", "platform": "tapo"},
@@ -61,7 +63,7 @@ REG = {
         {"entity_id": "alarm_control_panel.allarme_casa", "device_id": "dev_alarm", "platform": "manual"},
     ],
     "devices": [{"id": "dev_forno", "area_id": "cucina", "manufacturer": "Sonoff"}, {"id": "dev_faretti"}, {"id": "dev_led"}, {"id": "dev_tapo", "model": "C210"}, {"id": "dev_porta"},
-                {"id": "dev_blink", "model": "Blink Video Doorbell"}, {"id": "dev_echo"}, {"id": "dev_atv"}, {"id": "dev_clima"}, {"id": "dev_alarm"}],
+                {"id": "dev_blink", "model": "Blink Video Doorbell"}, {"id": "dev_echo"}, {"id": "dev_atv"}, {"id": "dev_clima"}, {"id": "dev_alarm"}, {"id": "dev_tx", "manufacturer": "Sonoff"}],
     "areas": [{"area_id": "cucina", "name": "Cucina"}, {"area_id": "studio", "name": "Studio"}, {"area_id": "garage", "name": "Garage"}, {"area_id": "bagno", "name": "Bagno"}],
 }
 subscribers = set()

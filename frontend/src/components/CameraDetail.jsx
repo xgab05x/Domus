@@ -142,6 +142,7 @@ export default function CameraDetail({ cam, bg, open, onClose }) {
               <IconButton value={cam.icon} onClick={() => setPicker(true)} testid="camera-icon-btn" />
               <input className="field flex-1" value={name} onChange={(e) => setName(e.target.value)} onBlur={saveName} onKeyDown={(e) => e.key === "Enter" && saveName()} data-testid="camera-name-input" />
             </div>
+            {cam.ha_name && <p className="text-[11px] text-muted mt-1">Nome in Home Assistant: <span className="font-mono">{cam.ha_name}</span> · {cam.ha_entity_id} (il tuo alias non lo modifica)</p>}
           </div>
           <div>
             <div className="label mb-1.5">Stanza / zona</div>

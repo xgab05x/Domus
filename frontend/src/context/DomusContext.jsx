@@ -316,7 +316,7 @@ export function DomusProvider({ children }) {
         onCancel={() => { pinReq?.resolve(null); setPinReq(null); }}
         onConfirm={(pin) => { pinReq?.resolve(pin); setPinReq(null); }} />
       <IntercomPopup alert={ringAlert} onClose={() => { stopSound(); setRingAlert(null); }} />
-      <AlarmPopup alert={alarmAlert} onClose={() => { stopSound(); setAlarmAlert(null); }} />
+      <AlarmPopup alert={alarmAlert} onClose={() => setAlarmAlert(null)} />
     </DomusCtx.Provider>
   );
 }

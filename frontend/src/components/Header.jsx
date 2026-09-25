@@ -40,10 +40,10 @@ export default function Header() {
 
           <div className="flex items-center gap-1 p-1 rounded-full glass-inner" data-testid="section-switcher">
             <button data-testid="switcher-sol-invictus" onClick={() => nav("/sol-invictus")} className={`chip !py-1.5 ${isSol ? "chip-active" : "!bg-transparent !border-transparent"}`}>
-              <BrandLogo name="sol" size={20} fallback={<Sun size={15} />} /> <span className="hidden sm:inline">Sol Invictus</span><span className="sm:hidden">Sol</span>
+              <BrandLogo name="sol" size={20} fallback={<Sun size={15} />} /> <span className="hidden sm:inline">{settings?.sol_label || "Sol Invictus"}</span><span className="sm:hidden">{(settings?.sol_label || "Sol").split(" ")[0]}</span>
             </button>
             <button data-testid="switcher-terminus" onClick={() => nav("/terminus")} className={`chip !py-1.5 ${!isSol ? "chip-active" : "!bg-transparent !border-transparent"}`}>
-              <BrandLogo name="terminus" size={20} fallback={<Shield size={15} />} /> Terminus
+              <BrandLogo name="terminus" size={20} fallback={<Shield size={15} />} /> {settings?.terminus_label || "Terminus"}
             </button>
           </div>
 

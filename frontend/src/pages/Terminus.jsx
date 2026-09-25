@@ -79,8 +79,8 @@ export default function Terminus() {
           <section>
             <h2 className="font-display text-xl font-semibold mb-3 flex items-center gap-2"><Cctv size={18} className="text-acc" /> Live camere{view ? <span className="text-sm text-muted font-body font-normal">· {view.name}</span> : null}</h2>
             <CameraGrid cams={cams} columns={compact ? "grid-cols-2 lg:grid-cols-3" : "grid-cols-1 sm:grid-cols-2"} />
+            <div className="mt-4"><GridsPanel /></div>
           </section>
-          <GridsPanel />
           {(zones.length > 0 || sensors.length > 0) && (
             <section>
               <h2 className="font-display text-xl font-semibold mb-3 flex items-center gap-2"><Radar size={18} className="text-acc" /> Sensori e zone</h2>

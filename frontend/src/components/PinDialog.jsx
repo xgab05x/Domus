@@ -40,7 +40,7 @@ export default function PinDialog({ open, reason, onConfirm, onCancel }) {
 
   if (!open) return null;
   return createPortal(
-    <div className="fixed inset-0 z-[60] flex items-center justify-center p-4" data-testid="pin-dialog">
+    <div className="fixed inset-0 z-[95] flex items-center justify-center p-4" data-testid="pin-dialog">
       <div className="absolute inset-0 bg-slate-900/55 backdrop-blur-md" onClick={onCancel} />
       <div className="relative glass-strong rounded-[32px] w-full max-w-[330px] p-6 pop-in">
         <div className="flex flex-col items-center text-center gap-2 mb-5">
