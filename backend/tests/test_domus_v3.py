@@ -15,7 +15,7 @@ import requests
 
 BASE_URL = os.environ.get("REACT_APP_BACKEND_URL", "").rstrip("/") or "https://smart-home-unified-1.preview.emergentagent.com"
 FAKE_HA_URL = "http://127.0.0.1:8123"
-FAKE_HA_TOKEN = "demo-token"
+FAKE_HA_TOKEN = os.environ.get("FAKE_HA_TOKEN", "demo-token")
 
 
 @pytest.fixture(scope="module")

@@ -2,13 +2,14 @@
 Run: python tests/fake_ha.py  (listens on 127.0.0.1:8123, token 'demo-token')."""
 import asyncio
 import json
+import os
 import sys
 from datetime import datetime, timezone
 
 import uvicorn
 from fastapi import FastAPI, Header, HTTPException, WebSocket, WebSocketDisconnect
 
-TOKEN = "demo-token"
+TOKEN = os.environ.get("FAKE_HA_TOKEN", "demo-token")
 app = FastAPI()
 calls = []
 

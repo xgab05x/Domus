@@ -109,8 +109,8 @@ function ThermostatsTab({ initialId, open }) {
           </button>
           <div className="mt-2 space-y-2">
             {form.schedule.map((s, i) => (
-              <div key={i} className="glass-inner rounded-2xl p-3 flex flex-wrap items-center gap-2" data-testid={`thermo-schedule-row-${i}`}>
-                <div className="flex gap-1">{DAYS.map((d, di) => <button key={di} onClick={() => toggleDay(i, di)} className={`w-7 h-7 rounded-full text-[11px] font-semibold ${s.days.includes(di) ? "icon-on" : "icon-off"}`} data-testid={`thermo-schedule-${i}-day-${di}`}>{d}</button>)}</div>
+              <div key={`${s.start}-${s.end}-${i}`} className="glass-inner rounded-2xl p-3 flex flex-wrap items-center gap-2" data-testid={`thermo-schedule-row-${i}`}>
+                <div className="flex gap-1">{DAYS.map((d, di) => <button key={d} onClick={() => toggleDay(i, di)} className={`w-7 h-7 rounded-full text-[11px] font-semibold ${s.days.includes(di) ? "icon-on" : "icon-off"}`} data-testid={`thermo-schedule-${i}-day-${di}`}>{d}</button>)}</div>
                 <input type="time" className="field !w-28 !py-1.5 font-mono text-xs" value={s.start} onChange={(e) => setSched(i, { start: e.target.value })} data-testid={`thermo-schedule-${i}-start`} />
                 <span className="text-muted text-xs">→</span>
                 <input type="time" className="field !w-28 !py-1.5 font-mono text-xs" value={s.end} onChange={(e) => setSched(i, { end: e.target.value })} data-testid={`thermo-schedule-${i}-end`} />

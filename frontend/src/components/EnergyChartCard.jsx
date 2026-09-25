@@ -23,7 +23,7 @@ function Tip({ active, payload, label, unit, fmt }) {
   return (
     <div className="glass-strong rounded-xl px-3 py-2 text-xs">
       {label && <div className="text-muted mb-0.5">{label}</div>}
-      {payload.map((p, i) => <div key={i} className="font-mono font-semibold">{p.name && typeof p.name === "string" && !/^[pvae]$/.test(p.name) ? `${p.name}: ` : ""}{fmt ? fmt(p.value) : p.value} {unit}</div>)}
+      {payload.map((p, i) => <div key={`${p.name ?? "v"}-${i}`} className="font-mono font-semibold">{p.name && typeof p.name === "string" && !/^[pvae]$/.test(p.name) ? `${p.name}: ` : ""}{fmt ? fmt(p.value) : p.value} {unit}</div>)}
     </div>
   );
 }

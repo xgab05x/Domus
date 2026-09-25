@@ -9,7 +9,7 @@ import { fmtTime } from "@/lib/security";
 export default function ProblemsSection() {
   const { setAvailability, markNotificationsRead, settings, updateSettings } = useDomus();
   const [data, setData] = useState(null);
-  const load = async () => { try { setData(await ProblemsAPI.list()); } catch { /* ignore */ } };
+  const load = async () => { try { setData(await ProblemsAPI.list()); } catch (err) { console.warn("Elenco problemi non disponibile:", err?.message || err); } };
   useEffect(() => { load(); const t = setInterval(load, 10000); return () => clearInterval(t); }, []);
 
   const total = data ? data.offline.length + data.low_battery.length + data.warnings.length + (settings?.ha_enabled && !data.ha.connected ? 1 : 0) : 0;

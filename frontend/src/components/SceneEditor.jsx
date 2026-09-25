@@ -100,7 +100,7 @@ export default function SceneEditor({ open, onClose, scene, defaultRoom = null }
                     <div className="flex items-center gap-3 flex-wrap">
                       <span className="text-[11px] text-muted w-20">Colore</span>
                       <div className="flex items-center gap-1.5">
-                        {presets.map((p, i) => <button key={i} title={p.name} onClick={() => setAction(l.id, { rgb: p.rgb })} className={`w-6 h-6 rounded-full border-2 ${a.rgb && rgbToHex(a.rgb) === rgbToHex(p.rgb) ? "border-slate-700 dark:border-white scale-110" : "border-white/80"}`} style={{ background: rgbToHex(p.rgb) }} data-testid={`scene-preset-${l.id}-${i}`} />)}
+                        {presets.map((p, i) => <button key={`${p.name}-${i}`} title={p.name} onClick={() => setAction(l.id, { rgb: p.rgb })} className={`w-6 h-6 rounded-full border-2 ${a.rgb && rgbToHex(a.rgb) === rgbToHex(p.rgb) ? "border-slate-700 dark:border-white scale-110" : "border-white/80"}`} style={{ background: rgbToHex(p.rgb) }} data-testid={`scene-preset-${l.id}-${i}`} />)}
                         <button onClick={() => setWheelFor(wheelFor === l.id ? null : l.id)} className={`chip !py-1 !px-2.5 ${wheelFor === l.id ? "chip-active" : ""}`} data-testid={`scene-wheel-toggle-${l.id}`}><Palette size={11} /> Ruota</button>
                         <span className="w-5 h-5 rounded-full border border-white/70" style={{ background: rgbToHex(a.rgb || [255, 200, 120]) }} />
                       </div>

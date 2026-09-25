@@ -203,7 +203,7 @@ function CostsTab({ preview }) {
           <div className="flex items-center justify-between mb-1.5"><div className="label">Costi fissi mensili</div><span className="text-xs text-muted font-mono">{fixedTotal.toFixed(2)} €/mese</span></div>
           <div className="space-y-2">
             {(cost.fixed_costs || []).map((f, i) => (
-              <div key={i} className="flex items-center gap-2" data-testid={`cost-fixed-row-${i}`}>
+              <div key={`${f.name}-${i}`} className="flex items-center gap-2" data-testid={`cost-fixed-row-${i}`}>
                 <input className="field flex-1" placeholder="Es. Quota fissa contatore" value={f.name} onChange={(ev) => setFixed(i, { name: ev.target.value })} data-testid={`cost-fixed-name-${i}`} />
                 <input type="number" step="0.01" className="field !w-28 font-mono" value={f.amount} onChange={(ev) => setFixed(i, { amount: ev.target.value })} data-testid={`cost-fixed-amount-${i}`} />
                 <span className="text-xs text-muted">€/mese</span>

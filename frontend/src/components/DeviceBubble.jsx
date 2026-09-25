@@ -106,7 +106,7 @@ export default function DeviceBubble({ entity }) {
       {isLight && s.supports_color && (
         <div className="mt-3 flex items-center gap-1.5">
           {presets.map((p, i) => (
-            <button key={i} title={p.name} onClick={() => updateEntity(entity.id, { state: { rgb: p.rgb, on: true } })} data-testid={`quick-color-${entity.id}-${i}`}
+            <button key={`${p.name}-${i}`} title={p.name} onClick={() => updateEntity(entity.id, { state: { rgb: p.rgb, on: true } })} data-testid={`quick-color-${entity.id}-${i}`}
               className={`w-6 h-6 rounded-full border-2 transition-transform hover:scale-110 ${rgbToHex(p.rgb) === (s.rgb ? rgbToHex(s.rgb) : "") ? "border-slate-700 dark:border-white scale-110" : "border-white/80"}`}
               style={{ background: rgbToHex(p.rgb) }} />
           ))}

@@ -56,7 +56,7 @@ export function DomusProvider({ children }) {
   useEffect(() => {
     refresh();
     const t = setInterval(refresh, 30000);
-    const n = setInterval(async () => { try { ingestNotifications(await NotificationsAPI.list(50)); } catch { /* offline */ } }, 10000);
+    const n = setInterval(async () => { try { ingestNotifications(await NotificationsAPI.list(50)); } catch (err) { console.warn("Notifiche non aggiornate:", err?.message || err); } }, 10000);
     return () => { clearInterval(t); clearInterval(n); };
   }, [refresh, ingestNotifications]);
 
@@ -69,7 +69,7 @@ export function DomusProvider({ children }) {
   useEffect(() => {
     let ws, timer, closed = false;
     const connect = () => {
-      try { ws = new WebSocket(`${API.replace(/^http/, "ws")}/ws`); } catch { return; }
+      try { ws = new WebSocket(`${API.replace(/^http/, "ws")}/ws`); } catch (err) { console.warn("WebSocket non disponibile:", err?.message || err); return; }
       ws.onmessage = (ev) => {
         try {
           const m = JSON.parse(ev.data);
@@ -77,13 +77,13 @@ export function DomusProvider({ children }) {
           else if (m.type === "ha") setHa(m.ha);
           else if (m.type === "settings") setSettings(m.settings);
           else if (m.type === "refresh") refresh();
-        } catch { /* ignore */ }
+        } catch (err) { console.warn("Messaggio websocket ignorato:", err?.message || err); }
       };
       ws.onclose = () => { if (!closed) timer = setTimeout(connect, 6000); };
       ws.onerror = () => ws.close();
     };
     connect();
-    return () => { closed = true; clearTimeout(timer); try { ws?.close(); } catch { /* noop */ } };
+    return () => { closed = true; clearTimeout(timer); try { ws?.close(); } catch (err) { console.warn("Chiusura websocket:", err?.message || err); } };
   }, [mergeEntities, refresh]);
 
   useEffect(() => {
